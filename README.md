@@ -56,3 +56,6 @@ MIT License. See `LICENSE.md` if present; otherwise the project is intended to b
 ## Contributing
 
 Contributions are welcome! Feel free to open issues or pull requests for bugs, features, or docs. Please run the test suite (`pytest -q`) before submitting and update as needed.
+
+## AI
+Developed with the help of GitHub Copilot (GPT-5)

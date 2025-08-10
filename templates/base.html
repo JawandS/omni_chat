@@ -41,8 +41,11 @@
   <main class="relative h-full w-full">
     <div class="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white/10 to-transparent"></div>
     <section class="flex flex-col h-full w-full px-4 md:px-6 py-4">
-      <header class="mb-3 md:mb-4 text-2xl md:text-3xl font-semibold tracking-tight">
-        {% block header %}{% endblock %}
+      <header class="mb-3 md:mb-4 flex items-center justify-between">
+        <div class="text-2xl md:text-3xl font-semibold tracking-tight">
+          {% block header %}{% endblock %}
+        </div>
+        <button id="settings-btn" class="text-white/80 hover:text-white" title="Settings">⚙️</button>
       </header>
       <div class="flex-1 min-h-0 text-white/90">
         {% block content %}{% endblock %}
@@ -50,5 +53,79 @@
       {% block extra %}{% endblock %}
     </section>
   </main>
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/60" data-close></div>
+    <div class="relative mx-auto mt-24 w-11/12 max-w-md rounded-xl border border-white/10 bg-slate-900 p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold">API Keys</h2>
+        <button class="text-white/70 hover:text-white" data-close>✖</button>
+      </div>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm text-white/70 mb-1">OpenAI API Key</label>
+          <input id="key-openai" type="password" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="sk-..." />
+        </div>
+        <div>
+          <label class="block text-sm text-white/70 mb-1">Gemini API Key</label>
+          <input id="key-gemini" type="password" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="..." />
+        </div>
+      </div>
+      <div class="mt-4 flex items-center justify-between">
+        <div class="space-x-2">
+          <button id="delete-openai" class="rounded-lg bg-red-600 hover:bg-red-500 px-3 py-2 text-sm">Delete OpenAI</button>
+          <button id="delete-gemini" class="rounded-lg bg-red-600 hover:bg-red-500 px-3 py-2 text-sm">Delete Gemini</button>
+        </div>
+        <div class="space-x-2">
+          <button id="save-keys" class="rounded-lg bg-primary-600 hover:bg-primary-500 px-4 py-2 text-sm">Save</button>
+          <button class="rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm" data-close>Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    const settingsBtn = document.getElementById('settings-btn');
+    const modal = document.getElementById('settings-modal');
+    const openaiInput = document.getElementById('key-openai');
+    const geminiInput = document.getElementById('key-gemini');
+    const saveBtn = document.getElementById('save-keys');
+    const delOpenai = document.getElementById('delete-openai');
+    const delGemini = document.getElementById('delete-gemini');
+
+    async function loadKeys() {
+      try {
+        const r = await fetch('/api/keys');
+        if (!r.ok) return;
+        const data = await r.json();
+        openaiInput.value = data.openai || '';
+        geminiInput.value = data.gemini || '';
+      } catch (_) {}
+    }
+
+    function openModal() {
+      modal.classList.remove('hidden');
+      loadKeys();
+    }
+    function closeModal() {
+      modal.classList.add('hidden');
+    }
+
+    settingsBtn?.addEventListener('click', openModal);
+    modal?.querySelectorAll('[data-close]')?.forEach(btn => btn.addEventListener('click', closeModal));
+
+    saveBtn?.addEventListener('click', async () => {
+      const body = { openai: openaiInput.value.trim(), gemini: geminiInput.value.trim() };
+      try {
+        await fetch('/api/keys', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        closeModal();
+      } catch (_) {}
+    });
+    delOpenai?.addEventListener('click', async () => {
+      try { await fetch('/api/keys/openai', { method: 'DELETE' }); openaiInput.value=''; } catch (_) {}
+    });
+    delGemini?.addEventListener('click', async () => {
+      try { await fetch('/api/keys/gemini', { method: 'DELETE' }); geminiInput.value=''; } catch (_) {}
+    });
+  </script>
 </body>
 </html>

@@ -1,5 +1,8 @@
 from datetime import datetime, UTC
 from flask import Flask, render_template, request, jsonify
+import os
+from typing import Optional
+from dotenv import load_dotenv, set_key, unset_key, dotenv_values
 
 from database import (
     init_app as db_init_app,
@@ -141,6 +144,67 @@ def create_app() -> Flask:
             return jsonify({"error": "not found"}), 404
         delete_chat(chat_id)
         commit()
+        return jsonify({"ok": True})
+
+    # Settings: API keys -----------------------------------------------------
+    def _env_path() -> str:
+        # .env at project root (same folder as app.py)
+        return os.path.join(app.root_path, ".env")
+
+    def _load_env_into_process() -> None:
+        # Ensure process env reflects file updates
+        load_dotenv(_env_path(), override=True)
+
+    @app.get("/api/keys")
+    def api_get_keys():
+        # Prefer file values; fall back to current process env
+        values = dotenv_values(_env_path())
+        openai = values.get("OPENAI_API_KEY") if values else None
+        gemini = values.get("GEMINI_API_KEY") if values else None
+        # If not in file, try process env
+        openai = openai or os.getenv("OPENAI_API_KEY")
+        gemini = gemini or os.getenv("GEMINI_API_KEY")
+        return jsonify({
+            "openai": openai or "",
+            "gemini": gemini or "",
+        })
+
+    @app.put("/api/keys")
+    def api_put_keys():
+        data = request.get_json(silent=True) or {}
+        env_file = _env_path()
+        os.makedirs(os.path.dirname(env_file), exist_ok=True)
+        updated: dict[str, Optional[str]] = {}
+        for k_env, body_key in (("OPENAI_API_KEY", "openai"), ("GEMINI_API_KEY", "gemini")):
+            if body_key in data:
+                value = data.get(body_key)
+                if value is None or str(value).strip() == "":
+                    try:
+                        unset_key(env_file, k_env)
+                    except Exception:
+                        pass
+                    os.environ.pop(k_env, None)
+                    updated[body_key] = None
+                else:
+                    set_key(env_file, k_env, str(value), quote_mode="never")
+                    os.environ[k_env] = str(value)
+                    updated[body_key] = str(value)
+        _load_env_into_process()
+        return jsonify({"ok": True, "updated": updated})
+
+    @app.delete("/api/keys/<provider>")
+    def api_delete_key(provider: str):
+        mapping = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
+        key = mapping.get(provider.lower())
+        if not key:
+            return jsonify({"error": "unknown provider"}), 400
+        env_file = _env_path()
+        try:
+            unset_key(env_file, key)
+        except Exception:
+            pass
+        os.environ.pop(key, None)
+        _load_env_into_process()
         return jsonify({"ok": True})
 
     return app

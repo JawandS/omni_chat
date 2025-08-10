@@ -11,12 +11,9 @@ Omni Chat
     <div class="h-full min-h-0 rounded-xl border border-white/10 bg-white/5">
       <div class="p-4 border-b border-white/10 flex items-center justify-between">
         <span class="font-medium">History</span>
-        <button class="text-sm text-white/70 hover:text-white">Clear</button>
+        <button id="clear-history" class="text-sm text-white/70 hover:text-white">Clear</button>
       </div>
-  <div class="p-3 space-y-2 overflow-auto h-[calc(100%-3.25rem)]">
-        <button class="w-full text-left px-3 py-2 rounded-lg bg-white/0 hover:bg-white/10 transition">New chat…</button>
-        <div class="text-white/60 text-sm">No previous chats yet.</div>
-      </div>
+      <div id="history" class="p-3 space-y-2 overflow-auto h-[calc(100%-3.25rem)]"></div>
     </div>
   </aside>
 
@@ -43,7 +40,8 @@ Omni Chat
             <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/70">▾</span>
           </div>
         </div>
-        <div class="ms-auto">
+        <div class="ms-auto flex items-center gap-2">
+          <input id="chat-title" type="text" placeholder="Untitled chat" class="w-48 md:w-64 rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 placeholder-white/40" />
           <button id="new-chat" class="inline-flex items-center rounded-lg bg-primary-600 hover:bg-primary-500 focus:ring-4 focus:ring-primary-400/40 px-4 py-2 text-sm font-medium transition">New Chat</button>
         </div>
       </div>
@@ -77,9 +75,13 @@ Omni Chat
   const composerEl = document.getElementById('composer');
   const inputEl = document.getElementById('input');
   const newChatEl = document.getElementById('new-chat');
+  const historyEl = document.getElementById('history');
+  const clearHistoryEl = document.getElementById('clear-history');
+  const chatTitleEl = document.getElementById('chat-title');
 
   let providers = [];
   let history = [];
+  let currentChatId = null;
 
   async function loadProviders() {
     try {
@@ -107,6 +109,66 @@ Omni Chat
 
   providerEl.addEventListener('change', populateModels);
 
+  async function loadHistory() {
+    try {
+      const res = await fetch('/api/chats');
+      const data = await res.json();
+      const chats = data.chats || [];
+      historyEl.innerHTML = '';
+      const newBtn = document.createElement('button');
+      newBtn.className = 'w-full text-left px-3 py-2 rounded-lg bg-white/0 hover:bg-white/10 transition';
+      newBtn.textContent = 'New chat…';
+      newBtn.addEventListener('click', () => startNewChat());
+      historyEl.appendChild(newBtn);
+      if (!chats.length) {
+        const empty = document.createElement('div');
+        empty.className = 'text-white/60 text-sm';
+        empty.textContent = 'No previous chats yet.';
+        historyEl.appendChild(empty);
+      }
+      for (const c of chats) {
+        const btn = document.createElement('button');
+        btn.className = 'w-full text-left px-3 py-2 rounded-lg bg-white/0 hover:bg-white/10 transition';
+        btn.innerHTML = `<div class="flex items-center justify-between"><span class="truncate">${escapeHtml(c.title || 'Untitled')}</span><span class="text-xs text-white/40 ms-2">${escapeHtml(c.provider || '')}</span></div>`;
+        btn.addEventListener('click', () => openChat(c.id));
+        historyEl.appendChild(btn);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  async function openChat(id) {
+    try {
+      const res = await fetch(`/api/chats/${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const chat = data.chat;
+      const msgs = data.messages || [];
+      currentChatId = chat.id;
+      chatTitleEl.value = chat.title || '';
+      providerEl.value = chat.provider || providerEl.value;
+      populateModels();
+      if (chat.model) modelEl.value = chat.model;
+      messagesEl.innerHTML = '';
+      history = [];
+      for (const m of msgs) {
+        appendMessage(m.role, m.content);
+        history.push({ role: m.role, content: m.content });
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function startNewChat() {
+    currentChatId = null;
+    chatTitleEl.value = '';
+    messagesEl.innerHTML = '';
+    history = [];
+    appendMessage('assistant', 'New chat started. How can I help?');
+  }
+
   function appendMessage(role, text) {
     const isUser = role === 'user';
     const wrapper = document.createElement('div');
@@ -133,16 +195,20 @@ Omni Chat
 
     const provider = providerEl.value;
     const model = modelEl.value;
+    const title = chatTitleEl.value.trim();
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, history, provider, model })
+        body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title })
       });
       const data = await res.json();
       const reply = data.reply || 'No reply received.';
       appendMessage('assistant', reply);
       history.push({ role: 'assistant', content: reply });
+      if (data.chat_id) currentChatId = data.chat_id;
+      if (data.title && !title) chatTitleEl.value = data.title;
+      loadHistory();
     } catch (err) {
       appendMessage('assistant', 'Error contacting server.');
     }
@@ -156,12 +222,27 @@ Omni Chat
   });
 
   newChatEl.addEventListener('click', () => {
-    history = [];
-    messagesEl.innerHTML = '';
-    appendMessage('assistant', 'New chat started. How can I help?');
+    startNewChat();
+  });
+
+  chatTitleEl.addEventListener('change', async () => {
+    const title = chatTitleEl.value.trim();
+    if (!currentChatId || !title) return;
+    await fetch(`/api/chats/${currentChatId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title })
+    });
+    loadHistory();
+  });
+
+  clearHistoryEl?.addEventListener('click', async () => {
+    // Soft clear: start new chat view, leave DB intact
+    startNewChat();
   });
 
   loadProviders();
+  loadHistory();
 </script>
 {% endblock %}
 

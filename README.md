@@ -1,65 +1,58 @@
 # Omni Chat
 
-Minimal Flask chat UI using Tailwind (via CDN). App routes live in `app.py`, with modular helpers:
-- `database.py` — SQLite helpers for chats/messages
-- `chat.py` — Chat logic (echo fallback + optional OpenAI)
+A simple and lightweight chat interface with a model selector you control (uses API calls). Lets you switch models / providers mid chat. Meant to run locally, uses SQLite to store history. 
 
 ## Quick start
 
-1) Create a virtual env (optional) and install deps
-2) Configure OpenAI (optional) via `.env`
-3) Run the app
-
-### Setup and run
+Prereqs: Python 3.10+
 
 ```bash
-# 1) (optional) create venv
+# 1) (optional) create a virtual environment
 python -m venv .venv
 source .venv/bin/activate
 
-# 2) install
+# 2) install dependencies
 pip install -r requirements.txt
 
-# 3) (optional) OpenAI key via .env
-cat > .env <<'EOF'
-OPENAI_API_KEY=sk-...your-key...
-EOF
-
-# 4) run
+# 3) run the app
 python app.py
 # open http://127.0.0.1:5000
+
+# 4) configure API key (settings icon or .env file)
+OPENAI_API_KEY=sk-...your-openai-key...
+GEMINI_API_KEY=...your-gemini-key...
 ```
 
-If no key is configured or provider != `openai`, responses use a safe echo fallback.
+## Provider and model support
+- Currently supporting OpenAI/Gemini
+- You can update `static/providers.json` for other models (might need to customize) `chat.py` for a different API call
 
-## API
+# Dev
+## Structure
+- `app.py`: main file with routes
+- `chat.py`: call various APIs
+- `database.py`: integrate with SQLite
 
-- POST `/api/chat`
-	- Body: `{ message: str, history?: [{role, content}], provider: str, model: str, chat_id?: int, title?: str }`
-	- Reply: `{ reply: str, chat_id: int, title?: str }`
-
-- GET `/api/chats`
-	- Reply: `{ chats: [{ id, title, provider, model, updated_at }] }`
-
-- GET `/api/chats/<id>`
-	- Reply: `{ chat: {...}, messages: [{ role, content, created_at }] }`
-
-- PATCH `/api/chats/<id>`
-	- Body: `{ title?: str, provider?: str, model?: str }`
-	- Reply: `{ ok: true }`
-
-- DELETE `/api/chats/<id>`
-	- Reply: `{ ok: true }`
-
-## Development
-
-### Run tests
+## Run tests
 
 ```bash
 pytest -q
 ```
 
-### Notes
-- Tailwind loads via CDN for speed. For production, consider a build pipeline to tree-shake styles.
-- SQLite DB is created under `instance/omni_chat.db`.
-- The UI centers the chat title and includes New/Delete chat buttons. Delete will switch to the next chat if one exists, or start a new chat.
+Notes:
+- Tests use a temp SQLite DB and monkeypatch provider calls – no real network calls.
+- The main DB lives at `instance/omni_chat.db` (created on first run).
+
+## Troubleshooting
+
+- Missing API key: The message shows an inline error and may auto‑open Settings. Add your key and retry.
+- OpenAI reasoning models (o3*): Make sure your account has access; if calls fail, try a standard model to validate setup.
+- Reset the database: Stop the app and delete `instance/omni_chat.db` (you’ll lose chats).
+
+## License
+
+MIT License. See `LICENSE.md` if present; otherwise the project is intended to be used under the MIT terms.
+
+## Contributing
+
+Contributions are welcome! Feel free to open issues or pull requests for bugs, features, or docs. Please run the test suite (`pytest -q`) before submitting and update as needed.

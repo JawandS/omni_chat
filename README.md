@@ -7,7 +7,7 @@ A modular Flask web app that provides a clean, modern chat interface (like ChatG
 - Providers: OpenAI (Chat Completions), Anthropic (Claude), Google Gemini (Generative AI)
 - SQLite persistence for chat sessions and messages
 - Encrypted API key storage using Fernet
-- Tailwind UI with modern, responsive layout, dark/blue theme by default, theme switcher
+- Tailwind UI with modern, responsive layout, dark/blue theme by default, theme switcher (updates instantly)
 - No external build step required (Tailwind via CDN for simplicity)
 
 ## Quickstart
@@ -69,7 +69,7 @@ print(Fernet.generate_key().decode())
 PY
 ```
 
-- This demo uses Tailwind via CDN for ease. For production, consider a Tailwind build pipeline and CSP hardening.
+- This demo uses Tailwind via CDN for ease. Theme switching is driven by CSS variables in `static/css/theme.css` and a `<select>` in the header. For production, consider a Tailwind build pipeline and CSP hardening.
 - Streaming responses are not implemented in this MVP; requests are synchronous. You can extend providers to enable streaming.
 
 ## Troubleshooting

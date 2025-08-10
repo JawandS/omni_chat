@@ -1,0 +1,11 @@
+/* Simple theming using data-theme attribute */
+:root[data-theme="blue"] {
+  --bg: 15 23 42; /* slate-900 */
+  --card: 2 6 23; /* slate-950 */
+  --primary: 37 99 235; /* blue-600 */
+}
+:root[data-theme="slate"] { --primary: 100 116 139; }
+:root[data-theme="emerald"] { --primary: 16 185 129; }
+:root[data-theme="violet"] { --primary: 139 92 246; }
+
+.btn-primary { background-color: rgb(var(--primary)); }

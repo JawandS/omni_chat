@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="max-w-3xl mx-auto border border-slate-800 rounded-lg bg-slate-900/40">
+  <div class="p-4 border-b border-slate-800">
+    <h2 class="text-lg font-semibold">API Keys</h2>
+    <p class="text-sm text-slate-400">Stored encrypted at rest using Fernet.</p>
+  </div>
+  <div class="p-4 space-y-4">
+    <form action="/settings/save" method="post" class="grid grid-cols-1 md:grid-cols-4 gap-2">
+      <select name="provider" class="bg-slate-800 border border-slate-700 rounded px-2 py-1">
+        <option value="openai">OpenAI</option>
+        <option value="anthropic">Anthropic</option>
+        <option value="gemini">Gemini</option>
+      </select>
+      <input name="api_key" class="md:col-span-2 bg-slate-800 border border-slate-700 rounded px-2 py-1" placeholder="Paste API key..." />
+      <button class="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 rounded text-white">Save</button>
+    </form>
+
+    <div class="border-t border-slate-800 pt-4">
+      <h3 class="font-medium mb-2">Saved Keys</h3>
+      <div class="space-y-2">
+        {% for k in keys %}
+        <form action="/settings/delete/{{ k.id }}" method="post" class="flex items-center justify-between bg-slate-800/60 border border-slate-700 rounded px-3 py-2">
+          <div>
+            <div class="text-sm font-medium">{{ k.provider }}</div>
+            <div class="text-xs text-slate-400">Saved {{ k.created_at }}</div>
+          </div>
+          <button class="px-3 py-1.5 bg-red-600 hover:bg-red-500 rounded text-white">Delete</button>
+        </form>
+        {% else %}
+        <div class="text-slate-400 text-sm">No keys saved.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

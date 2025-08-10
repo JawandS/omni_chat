@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" data-theme="blue">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Omni Chat</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                50: '#eff6ff',
+                100: '#dbeafe',
+                200: '#bfdbfe',
+                300: '#93c5fd',
+                400: '#60a5fa',
+                500: '#3b82f6',
+                600: '#2563eb',
+                700: '#1d4ed8',
+                800: '#1e40af',
+                900: '#1e3a8a'
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}" />
+  </head>
+  <body class="bg-slate-950 text-slate-200 min-h-screen">
+    <header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur sticky top-0 z-10">
+      <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+        <a href="/" class="flex items-center gap-2">
+          <div class="w-8 h-8 rounded bg-primary-600"></div>
+          <span class="font-semibold text-lg">Omni Chat</span>
+        </a>
+        <nav class="flex items-center gap-3">
+          <a class="px-3 py-1.5 rounded hover:bg-slate-800" href="/">Chat</a>
+          <a class="px-3 py-1.5 rounded hover:bg-slate-800" href="/settings">Settings</a>
+          <div class="relative">
+            <select id="theme-select" class="bg-slate-800/80 border border-slate-700 rounded px-2 py-1 text-sm">
+              <option value="blue" selected>Blue</option>
+              <option value="slate">Slate</option>
+              <option value="emerald">Emerald</option>
+              <option value="violet">Violet</option>
+            </select>
+          </div>
+        </nav>
+      </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-4">
+      {% block content %}{% endblock %}
+    </main>
+
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
+    <script>
+      const sel = document.getElementById('theme-select');
+      const saved = localStorage.getItem('theme') || 'blue';
+      sel.value = saved;
+      document.documentElement.setAttribute('data-theme', saved);
+      sel.addEventListener('change', () => {
+        localStorage.setItem('theme', sel.value);
+        document.documentElement.setAttribute('data-theme', sel.value);
+      });
+    </script>
+  </body>
+</html>

@@ -1,14 +1,162 @@
 {% extends "base.html" %}
 
-{% block header %}👋 Hello from Flask{% endblock %}
+{% block header %}
+Omni Chat
+{% endblock %}
 
 {% block content %}
-{{ message }}
+<div class="grid grid-cols-12 gap-4 md:gap-6 h-full min-h-0">
+  <!-- Sidebar: conversation history (placeholder) -->
+  <aside class="hidden md:block col-span-3 min-h-0">
+    <div class="h-full min-h-0 rounded-xl border border-white/10 bg-white/5">
+      <div class="p-4 border-b border-white/10 flex items-center justify-between">
+        <span class="font-medium">History</span>
+        <button class="text-sm text-white/70 hover:text-white">Clear</button>
+      </div>
+  <div class="p-3 space-y-2 overflow-auto h-[calc(100%-3.25rem)]">
+        <button class="w-full text-left px-3 py-2 rounded-lg bg-white/0 hover:bg-white/10 transition">New chat…</button>
+        <div class="text-white/60 text-sm">No previous chats yet.</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main chat area -->
+  <section class="col-span-12 md:col-span-9 flex flex-col min-h-0">
+    <!-- Top bar: provider + model selectors -->
+    <div class="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4 mb-3 md:mb-4">
+      <div class="flex flex-col md:flex-row md:items-center gap-3">
+        <div class="flex items-center gap-2">
+          <label for="provider" class="text-sm text-white/70">Provider</label>
+          <select id="provider" data-testid="provider-select" class="appearance-none bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition">
+            <option>Loading…</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
+          <label for="model" class="text-sm text-white/70">Model</label>
+          <select id="model" data-testid="model-select" class="appearance-none bg-white/10 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-48">
+            <option>Select provider first</option>
+          </select>
+        </div>
+        <div class="ms-auto">
+          <button id="new-chat" class="inline-flex items-center rounded-lg bg-primary-600 hover:bg-primary-500 focus:ring-4 focus:ring-primary-400/40 px-4 py-2 text-sm font-medium transition">New Chat</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Messages -->
+  <div id="messages" class="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1">
+      <div class="flex items-start gap-3">
+        <div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>
+        <div class="rounded-xl border border-white/10 bg-white/5 p-3 max-w-3xl">
+          <p class="text-white/90">Hi! Ask me anything. I’ll respond here.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Composer -->
+    <form id="composer" class="mt-3 md:mt-4">
+      <div class="relative">
+        <textarea id="input" rows="1" placeholder="Message…" class="w-full resize-none rounded-2xl border border-white/10 bg-white/5 focus:bg-white/10 transition p-4 pr-24 outline-none focus:ring-2 focus:ring-primary-400/40"></textarea>
+        <button id="send" type="submit" class="absolute right-2 bottom-2 inline-flex items-center rounded-xl bg-primary-600 hover:bg-primary-500 focus:ring-4 focus:ring-primary-400/40 px-3 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">Send ▶</button>
+      </div>
+      <p class="mt-2 text-xs text-white/50">Press Enter to send • Shift+Enter for newline</p>
+    </form>
+  </section>
+</div>
+
+<script>
+  const providerEl = document.getElementById('provider');
+  const modelEl = document.getElementById('model');
+  const messagesEl = document.getElementById('messages');
+  const composerEl = document.getElementById('composer');
+  const inputEl = document.getElementById('input');
+  const newChatEl = document.getElementById('new-chat');
+
+  let providers = [];
+  let history = [];
+
+  async function loadProviders() {
+    try {
+      const res = await fetch('/static/providers.json', { cache: 'no-store' });
+      const data = await res.json();
+      providers = data.providers || [];
+      providerEl.innerHTML = providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      if (providers.length) {
+        providerEl.value = providers[0].id;
+        populateModels();
+      }
+    } catch (e) {
+      // Fallback
+      providers = [{ id: 'openai', name: 'OpenAI', models: ['gpt-4o-mini'] }];
+      providerEl.innerHTML = `<option value="openai">OpenAI</option>`;
+      populateModels();
+    }
+  }
+
+  function populateModels() {
+    const p = providers.find(x => x.id === providerEl.value);
+    const models = p ? p.models : [];
+    modelEl.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('') || '<option>No models</option>';
+  }
+
+  providerEl.addEventListener('change', populateModels);
+
+  function appendMessage(role, text) {
+    const isUser = role === 'user';
+    const wrapper = document.createElement('div');
+    wrapper.className = `flex items-start gap-3 ${isUser ? 'justify-end' : ''}`;
+    wrapper.innerHTML = `
+      ${isUser ? '' : '<div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>'}
+      <div class="rounded-xl border border-white/10 ${isUser ? 'bg-primary-600/20' : 'bg-white/5'} p-3 max-w-3xl">${escapeHtml(text)}</div>
+    `;
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"]+/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  composerEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const message = inputEl.value.trim();
+    if (!message) return;
+    inputEl.value = '';
+    appendMessage('user', message);
+    history.push({ role: 'user', content: message });
+
+    const provider = providerEl.value;
+    const model = modelEl.value;
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history, provider, model })
+      });
+      const data = await res.json();
+      const reply = data.reply || 'No reply received.';
+      appendMessage('assistant', reply);
+      history.push({ role: 'assistant', content: reply });
+    } catch (err) {
+      appendMessage('assistant', 'Error contacting server.');
+    }
+  });
+
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      composerEl.requestSubmit();
+    }
+  });
+
+  newChatEl.addEventListener('click', () => {
+    history = [];
+    messagesEl.innerHTML = '';
+    appendMessage('assistant', 'New chat started. How can I help?');
+  });
+
+  loadProviders();
+</script>
 {% endblock %}
 
-{% block extra %}
-<div class="mt-6 flex items-center gap-3">
-  <a href="https://flask.palletsprojects.com/" class="inline-flex items-center rounded-lg bg-primary-600 hover:bg-primary-500 focus:ring-4 focus:ring-primary-400/40 px-4 py-2 font-medium transition-colors">Flask Docs</a>
-  <a href="https://tailwindcss.com/" class="inline-flex items-center rounded-lg bg-white/10 hover:bg-white/20 focus:ring-4 focus:ring-white/20 px-4 py-2 font-medium transition-colors">Tailwind Docs</a>
-</div>
-{% endblock %}
+{% block extra %}{% endblock %}

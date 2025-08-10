@@ -64,9 +64,12 @@ def create_app() -> Flask:
             # Save user message (store provider/model snapshot on message for auditability)
             insert_message(chat_id, 'user', message, now, provider=provider, model=model)
 
-            # Generate and save assistant reply (OpenAI if configured, else echo). Pass history along.
+            # Generate and save assistant reply (OpenAI/Gemini if configured). Pass history along.
             history = data.get("history") or []
-            reply_obj = generate_reply(provider, model, message, history)
+            try:
+                reply_obj = generate_reply(provider, model, message, history)
+            except ValueError as e:
+                return jsonify({"error": str(e)}), 400
             reply = reply_obj.reply
             insert_message(chat_id, 'assistant', reply, now, provider=provider, model=model)
 

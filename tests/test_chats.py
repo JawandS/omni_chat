@@ -17,7 +17,7 @@ def _create_chat(client, *, message="Hello", provider="openai", model="gpt-4o-mi
 
 def test_create_and_get_chat(client):
     chat_id, data = _create_chat(client, title="My Chat")
-    assert data["reply"].startswith("[openai/gpt-4o-mini] Echo:")
+    assert data["reply"].startswith("[openai/gpt-4o-mini]:") or data["reply"].startswith("Hello")
 
     # Fetch chat details
     r = client.get(f"/api/chats/{chat_id}")

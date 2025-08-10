@@ -13,14 +13,20 @@ if load_dotenv is not None:
     except Exception:
         pass
 
-# Hardcoded place for the API key (replace with your actual key or use env var)
-# Prefer environment variable if present; falls back to the constant placeholder.
+# Hardcoded place for the API keys (replace with your actual keys or use env vars)
+# Prefer environment variables if present; fall back to constant placeholders.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "PUT_OPENAI_API_KEY_HERE")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "PUT_GEMINI_API_KEY_HERE")
 
 try:
     from openai import OpenAI  # type: ignore
 except Exception:  # pragma: no cover - optional dependency in tests
     OpenAI = None  # type: ignore
+
+try:
+    import google.generativeai as genai  # type: ignore
+except Exception:  # pragma: no cover - optional dependency in tests
+    genai = None  # type: ignore
 
 
 @dataclass
@@ -68,16 +74,75 @@ def _openai_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
         return None
 
 
+def _format_history_for_gemini(history: List[Dict[str, str]], latest_message: str):
+    """Convert history to Gemini chat history and user input.
+
+    Returns (history_list, user_text) where history_list is a list of dicts with
+    'role' ('user'|'model') and 'parts' (list of strings), and user_text is the
+    current user message to send.
+    """
+    mapped = []
+    for m in history or []:
+        role = m.get("role") or "user"
+        content = m.get("content") or ""
+        if role not in ("user", "assistant", "system"):
+            role = "user"
+        gem_role = "model" if role == "assistant" else "user"
+        mapped.append({"role": gem_role, "parts": [content]})
+    return mapped, latest_message
+
+
+def _gemini_call(model: str, history: List[Dict[str, str]], message: str) -> Optional[str]:
+    """Call Google Gemini with formatted history.
+
+    Returns reply content string or None on failure.
+    """
+    if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("PUT_"):
+        return None
+    if genai is None:
+        return None
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        chat_history, user_text = _format_history_for_gemini(history, message)
+        model_obj = genai.GenerativeModel(model)
+        # Start a new chat with prior history and send the latest message
+        chat = model_obj.start_chat(history=chat_history)
+        resp = chat.send_message(user_text)
+        # Get text output (first candidate)
+        if hasattr(resp, "text") and resp.text:
+            return str(resp.text)
+        # Fallback: try candidates list
+        if getattr(resp, "candidates", None):
+            for cand in resp.candidates:
+                parts = getattr(getattr(cand, "content", None), "parts", None)
+                if parts:
+                    return str(parts[0].text)
+        return None
+    except Exception:
+        return None
+
+
 def generate_reply(provider: str, model: str, message: str, history: Optional[List[Dict[str, str]]] = None) -> ChatReply:
     """Chat generation logic with optional OpenAI backend.
 
     - If provider == 'openai' and the OpenAI client/key is available, perform a real API call with full history.
     - Otherwise, fall back to echo behavior for reliability in tests/offline.
     """
-    if provider.lower() == "openai":
-        content = _openai_call(model, history or [], message)
+    plow = provider.lower()
+    hist = history or []
+    if plow == "openai":
+        content = _openai_call(model, hist, message)
         if content:
             return ChatReply(reply=content)
-    # Fallback echo (keeps previous test expectations)
-    reply = f"[{provider}/{model}] Echo: {message}"
+    elif plow == "gemini":
+        content = _gemini_call(model, hist, message)
+        if content:
+            return ChatReply(reply=content)
+    elif plow in ("", None):  # type: ignore[comparison-overlap]
+        raise ValueError("provider is required")
+    else:
+        # Unrecognized provider -> signal error upstream
+        raise ValueError(f"unknown provider: {provider}")
+    # Fallback when provider is recognized but API path returned no content
+    reply = f"[{provider}/{model}]: {message}"
     return ChatReply(reply=reply)

@@ -20,4 +20,5 @@ def test_api_chat_echo(client):
     resp = client.post("/api/chat", json=payload)
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["reply"].startswith("[openai/gpt-4o-mini] Echo: Hello")
+    # Fallback/LLM reply format no longer includes 'Echo'
+    assert data["reply"].startswith("[openai/gpt-4o-mini]: Hello") or data["reply"].startswith("Hello")

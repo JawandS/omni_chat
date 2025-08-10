@@ -51,7 +51,9 @@ Omni Chat
       </div>
     </div>
 
-    <!-- Messages -->
+  <!-- Warning toast -->
+  <div id="toast" class="hidden mb-2 rounded-lg bg-yellow-500/20 border border-yellow-400/30 text-yellow-200 text-sm px-3 py-2"></div>
+  <!-- Messages -->
   <div id="messages" class="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1">
       <div class="flex items-start gap-3">
         <div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>
@@ -83,6 +85,14 @@ Omni Chat
   const clearHistoryEl = document.getElementById('clear-history');
   const chatTitleEl = document.getElementById('chat-title');
   const deleteChatEl = document.getElementById('delete-chat');
+  const toastEl = document.getElementById('toast');
+  function showToast(msg) {
+    if (!msg) return;
+    toastEl.textContent = msg;
+    toastEl.classList.remove('hidden');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toastEl.classList.add('hidden'), 4000);
+  }
 
   let providers = [];
   let history = [];
@@ -174,14 +184,14 @@ Omni Chat
     appendMessage('assistant', 'New chat started. How can I help?');
   }
 
-  function appendMessage(role, text, provider = null, model = null) {
+  function appendMessage(role, text, provider = null, model = null, isError = false) {
     const isUser = role === 'user';
     const wrapper = document.createElement('div');
     wrapper.className = `flex items-start gap-3 ${isUser ? 'justify-end' : ''}`;
     const badge = provider && model ? `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>` : '';
     wrapper.innerHTML = `
       ${isUser ? '' : '<div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>'}
-      <div class="max-w-3xl">${badge}<div class="rounded-xl border border-white/10 ${isUser ? 'bg-primary-600/20' : 'bg-white/5'} p-3">${escapeHtml(text)}</div></div>
+      <div class="max-w-3xl">${badge}<div class="rounded-xl border ${isError ? 'border-red-400/60 bg-red-500/10' : 'border-white/10 ' + (isUser ? 'bg-primary-600/20' : 'bg-white/5')} p-3">${escapeHtml(text)}</div></div>
     `;
     messagesEl.appendChild(wrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -210,13 +220,28 @@ Omni Chat
       });
       const data = await res.json();
       const reply = data.reply || 'No reply received.';
-  appendMessage('assistant', reply, provider, model);
+      const isErr = !!data.error;
+      appendMessage('assistant', isErr ? (data.error || 'Provider error') : reply, provider, model, isErr);
+      if (data.missing_key_for) {
+        // Open settings and focus the appropriate input
+        const settingsBtn = document.getElementById('settings-btn');
+        const openModal = () => settingsBtn?.click();
+        openModal();
+        setTimeout(() => {
+          try {
+            const el = data.missing_key_for === 'openai' ? document.getElementById('key-openai') : document.getElementById('key-gemini');
+            el?.focus();
+          } catch (_) {}
+        }, 50);
+      }
+  if (data.warning) showToast(data.warning);
       history.push({ role: 'assistant', content: reply });
       if (data.chat_id) currentChatId = data.chat_id;
       if (data.title && !title) chatTitleEl.value = data.title;
       loadHistory();
     } catch (err) {
-      appendMessage('assistant', 'Error contacting server.');
+      appendMessage('assistant', 'Error contacting server.', null, null, true);
+      showToast('Provider call failed or API key missing. Open settings to configure.');
     }
   });
 

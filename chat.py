@@ -13,10 +13,15 @@ if load_dotenv is not None:
     except Exception:
         pass
 
-# Hardcoded place for the API keys (replace with your actual keys or use env vars)
-# Prefer environment variables if present; fall back to constant placeholders.
+# Hardcoded placeholders; actual values are read from environment at call time.
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "PUT_OPENAI_API_KEY_HERE")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "PUT_GEMINI_API_KEY_HERE")
+
+def _get_openai_key() -> str:
+    return os.getenv("OPENAI_API_KEY", "")
+
+def _get_gemini_key() -> str:
+    return os.getenv("GEMINI_API_KEY", "")
 
 try:
     from openai import OpenAI  # type: ignore
@@ -32,6 +37,9 @@ except Exception:  # pragma: no cover - optional dependency in tests
 @dataclass
 class ChatReply:
     reply: str
+    warning: Optional[str] = None
+    error: Optional[str] = None
+    missing_key_for: Optional[str] = None
 
 def _format_history_for_openai(history: List[Dict[str, str]], latest_message: str) -> List[Dict[str, str]]:
     """Convert our history list to OpenAI Chat Completions format.
@@ -56,12 +64,13 @@ def _openai_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
 
     Returns the reply string or None on failure.
     """
-    if not OPENAI_API_KEY or OPENAI_API_KEY.startswith("PUT_"):
+    key = _get_openai_key()
+    if not key or key.startswith("PUT_"):
         return None
     if OpenAI is None:
         return None
     try:
-        client = OpenAI(api_key=OPENAI_API_KEY)
+        client = OpenAI(api_key=key)
         messages = _format_history_for_openai(history, message)
         resp = client.chat.completions.create(
             model=model,
@@ -97,12 +106,13 @@ def _gemini_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
 
     Returns reply content string or None on failure.
     """
-    if not GEMINI_API_KEY or GEMINI_API_KEY.startswith("PUT_"):
+    key = _get_gemini_key()
+    if not key or key.startswith("PUT_"):
         return None
     if genai is None:
         return None
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
+        genai.configure(api_key=key)
         chat_history, user_text = _format_history_for_gemini(history, message)
         model_obj = genai.GenerativeModel(model)
         # Start a new chat with prior history and send the latest message
@@ -134,15 +144,24 @@ def generate_reply(provider: str, model: str, message: str, history: Optional[Li
         content = _openai_call(model, hist, message)
         if content:
             return ChatReply(reply=content)
+        else:
+            k = _get_openai_key()
+            missing = (not k or k.startswith("PUT_") or OpenAI is None)
+            if missing:
+                return ChatReply(reply="", error="OpenAI API key not set", missing_key_for="openai")
+            return ChatReply(reply="", error="OpenAI call failed")
     elif plow == "gemini":
         content = _gemini_call(model, hist, message)
         if content:
             return ChatReply(reply=content)
+        else:
+            k = _get_gemini_key()
+            missing = (not k or k.startswith("PUT_") or genai is None)
+            if missing:
+                return ChatReply(reply="", error="Gemini API key not set", missing_key_for="gemini")
+            return ChatReply(reply="", error="Gemini call failed")
     elif plow in ("", None):  # type: ignore[comparison-overlap]
         raise ValueError("provider is required")
     else:
         # Unrecognized provider -> signal error upstream
         raise ValueError(f"unknown provider: {provider}")
-    # Fallback when provider is recognized but API path returned no content
-    reply = f"[{provider}/{model}]: {message}"
-    return ChatReply(reply=reply)

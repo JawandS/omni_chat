@@ -80,7 +80,14 @@ def create_app() -> Flask:
             touch_chat(chat_id, now)
             commit()
 
-            return jsonify({"reply": reply, "chat_id": chat_id, "title": title or None})
+            resp_body = {"reply": reply, "chat_id": chat_id, "title": title or None}
+            if getattr(reply_obj, "warning", None):
+                resp_body["warning"] = reply_obj.warning
+            if getattr(reply_obj, "error", None):
+                resp_body["error"] = reply_obj.error
+            if getattr(reply_obj, "missing_key_for", None):
+                resp_body["missing_key_for"] = reply_obj.missing_key_for
+            return jsonify(resp_body)
         except Exception:  # pragma: no cover - keep placeholder simple
             return jsonify({"error": "unexpected error"}), 500
 

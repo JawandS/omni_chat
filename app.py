@@ -31,6 +31,9 @@ def create_app() -> Flask:
     with app.app_context():
         init_db()
 
+    # Default path to .env can be overridden in tests via app.config['ENV_PATH']
+    app.config.setdefault("ENV_PATH", os.path.join(app.root_path, ".env"))
+
     @app.route("/")
     def home():
         return render_template("index.html")
@@ -155,8 +158,8 @@ def create_app() -> Flask:
 
     # Settings: API keys -----------------------------------------------------
     def _env_path() -> str:
-        # .env at project root (same folder as app.py)
-        return os.path.join(app.root_path, ".env")
+        # Use configurable path for tests; default to project .env
+        return app.config.get("ENV_PATH", os.path.join(app.root_path, ".env"))
 
     def _load_env_into_process() -> None:
         # Ensure process env reflects file updates

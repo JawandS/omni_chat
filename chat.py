@@ -91,7 +91,6 @@ def _openai_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
         resp = client.chat.completions.create(
             model=model,
             messages=messages,
-            temperature=0.2,
         )
         content = resp.choices[0].message.content if resp.choices else None
         return content or None

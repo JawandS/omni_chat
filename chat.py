@@ -75,29 +75,26 @@ def _openai_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
         return None
     if OpenAI is None:
         return None
-    try:
-        client = OpenAI(api_key=key)
-        messages = _format_history_for_openai(history, message)
-        if _openai_is_reasoning_model(model):
-            # Use Responses API for reasoning models like o3-mini
-            resp = client.responses.create(
-                model=model,
-                input=messages,
-                reasoning={"effort": "low"},
-            )
-            # The Responses API returns output_text
-            content = getattr(resp, "output_text", None)
-            return content or None
-        else:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.2,
-            )
-            content = resp.choices[0].message.content if resp.choices else None
-            return content or None
-    except Exception:
-        return None
+    client = OpenAI(api_key=key)
+    messages = _format_history_for_openai(history, message)
+    if _openai_is_reasoning_model(model):
+        # Use Responses API for reasoning models like o3-mini
+        resp = client.responses.create(
+            model=model,
+            input=messages,
+            reasoning={"effort": "low"},
+        )
+        # The Responses API returns output_text
+        content = getattr(resp, "output_text", None)
+        return content or None
+    else:
+        resp = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=0.2,
+        )
+        content = resp.choices[0].message.content if resp.choices else None
+        return content or None
 
 
 def _format_history_for_gemini(history: List[Dict[str, str]], latest_message: str):
@@ -128,26 +125,23 @@ def _gemini_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
         return None
     if genai is None:
         return None
-    try:
-        genai.configure(api_key=key)
-        chat_history, user_text = _format_history_for_gemini(history, message)
-        # Gemini 2.5 and others are handled by the same client
-        model_obj = genai.GenerativeModel(model)
-        # Start a new chat with prior history and send the latest message
-        chat = model_obj.start_chat(history=chat_history)
-        resp = chat.send_message(user_text)
-        # Get text output (first candidate)
-        if hasattr(resp, "text") and resp.text:
-            return str(resp.text)
-        # Fallback: try candidates list
-        if getattr(resp, "candidates", None):
-            for cand in resp.candidates:
-                parts = getattr(getattr(cand, "content", None), "parts", None)
-                if parts:
-                    return str(parts[0].text)
-        return None
-    except Exception:
-        return None
+    genai.configure(api_key=key)
+    chat_history, user_text = _format_history_for_gemini(history, message)
+    # Gemini 2.5 and others are handled by the same client
+    model_obj = genai.GenerativeModel(model)
+    # Start a new chat with prior history and send the latest message
+    chat = model_obj.start_chat(history=chat_history)
+    resp = chat.send_message(user_text)
+    # Get text output (first candidate)
+    if hasattr(resp, "text") and resp.text:
+        return str(resp.text)
+    # Fallback: try candidates list
+    if getattr(resp, "candidates", None):
+        for cand in resp.candidates:
+            parts = getattr(getattr(cand, "content", None), "parts", None)
+            if parts:
+                return str(parts[0].text)
+    return None
 
 
 def generate_reply(provider: str, model: str, message: str, history: Optional[List[Dict[str, str]]] = None) -> ChatReply:
@@ -159,25 +153,31 @@ def generate_reply(provider: str, model: str, message: str, history: Optional[Li
     plow = provider.lower()
     hist = history or []
     if plow == "openai":
-        content = _openai_call(model, hist, message)
-        if content:
-            return ChatReply(reply=content)
-        else:
+        try:
+            content = _openai_call(model, hist, message)
+            if content:
+                return ChatReply(reply=content)
+            # If no content, check for missing key/client
             k = _get_openai_key()
             missing = (not k or k.startswith("PUT_") or OpenAI is None)
             if missing:
                 return ChatReply(reply="", error="OpenAI API key not set", missing_key_for="openai")
-            return ChatReply(reply="", error="OpenAI call failed")
+            return ChatReply(reply="", error="OpenAI returned no content")
+        except Exception as e:
+            # Provide a detailed error for developers
+            return ChatReply(reply="", error=f"OpenAI error: {e.__class__.__name__}: {e}")
     elif plow == "gemini":
-        content = _gemini_call(model, hist, message)
-        if content:
-            return ChatReply(reply=content)
-        else:
+        try:
+            content = _gemini_call(model, hist, message)
+            if content:
+                return ChatReply(reply=content)
             k = _get_gemini_key()
             missing = (not k or k.startswith("PUT_") or genai is None)
             if missing:
                 return ChatReply(reply="", error="Gemini API key not set", missing_key_for="gemini")
-            return ChatReply(reply="", error="Gemini call failed")
+            return ChatReply(reply="", error="Gemini returned no content")
+        except Exception as e:
+            return ChatReply(reply="", error=f"Gemini error: {e.__class__.__name__}: {e}")
     elif plow in ("", None):  # type: ignore[comparison-overlap]
         raise ValueError("provider is required")
     else:

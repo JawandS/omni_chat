@@ -51,12 +51,30 @@ def init_db() -> None:
             chat_id INTEGER NOT NULL,
             role TEXT NOT NULL CHECK(role IN ('user','assistant')),
             content TEXT NOT NULL,
+            provider TEXT,
+            model TEXT,
             created_at TEXT NOT NULL,
             FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
         );
         """
     )
     db.commit()
+
+    # Lightweight migration for existing DBs: ensure provider/model columns exist on messages
+    try:
+        cols = [r[1] for r in db.execute("PRAGMA table_info(messages)").fetchall()]
+        to_add = []
+        if "provider" not in cols:
+            to_add.append("ALTER TABLE messages ADD COLUMN provider TEXT")
+        if "model" not in cols:
+            to_add.append("ALTER TABLE messages ADD COLUMN model TEXT")
+        for stmt in to_add:
+            db.execute(stmt)
+        if to_add:
+            db.commit()
+    except Exception:
+        # Best-effort migration; ignore if PRAGMA or ALTER not supported
+        pass
 
 
 def commit() -> None:
@@ -97,11 +115,12 @@ def update_chat(chat_id: int, *, title: Optional[str] = None, provider: Optional
         )
 
 
-def insert_message(chat_id: int, role: str, content: str, now: Optional[str] = None) -> None:
+def insert_message(chat_id: int, role: str, content: str, now: Optional[str] = None,
+                   provider: Optional[str] = None, model: Optional[str] = None) -> None:
     ts = now or datetime.now(UTC).isoformat()
     get_db().execute(
-        "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-        (chat_id, role, content, ts),
+        "INSERT INTO messages (chat_id, role, content, provider, model, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (chat_id, role, content, provider, model, ts),
     )
 
 
@@ -125,7 +144,7 @@ def get_chat(chat_id: int):
 
 def get_messages(chat_id: int):
     return get_db().execute(
-        "SELECT role, content, created_at FROM messages WHERE chat_id = ? ORDER BY id ASC",
+    "SELECT role, content, provider, model, created_at FROM messages WHERE chat_id = ? ORDER BY id ASC",
         (chat_id,),
     ).fetchall()
 

@@ -61,14 +61,14 @@ def create_app() -> Flask:
                 # Update provider/model if changed
                 update_chat_meta(chat_id, provider, model, now)
 
-            # Save user message
-            insert_message(chat_id, 'user', message, now)
+            # Save user message (store provider/model snapshot on message for auditability)
+            insert_message(chat_id, 'user', message, now, provider=provider, model=model)
 
             # Generate and save assistant reply (OpenAI if configured, else echo). Pass history along.
             history = data.get("history") or []
             reply_obj = generate_reply(provider, model, message, history)
             reply = reply_obj.reply
-            insert_message(chat_id, 'assistant', reply, now)
+            insert_message(chat_id, 'assistant', reply, now, provider=provider, model=model)
 
             # Touch chat updated_at
             touch_chat(chat_id, now)
@@ -110,7 +110,7 @@ def create_app() -> Flask:
                 "updated_at": chat["updated_at"],
             },
             "messages": [
-                {"role": m["role"], "content": m["content"], "created_at": m["created_at"]} for m in msgs
+                {"role": m["role"], "content": m["content"], "provider": m["provider"], "model": m["model"], "created_at": m["created_at"]} for m in msgs
             ],
         })
 

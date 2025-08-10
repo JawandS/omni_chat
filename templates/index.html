@@ -158,7 +158,7 @@ Omni Chat
       messagesEl.innerHTML = '';
       history = [];
       for (const m of msgs) {
-        appendMessage(m.role, m.content);
+        appendMessage(m.role, m.content, m.provider, m.model);
         history.push({ role: m.role, content: m.content });
       }
     } catch (e) {
@@ -174,13 +174,14 @@ Omni Chat
     appendMessage('assistant', 'New chat started. How can I help?');
   }
 
-  function appendMessage(role, text) {
+  function appendMessage(role, text, provider = null, model = null) {
     const isUser = role === 'user';
     const wrapper = document.createElement('div');
     wrapper.className = `flex items-start gap-3 ${isUser ? 'justify-end' : ''}`;
+    const badge = provider && model ? `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>` : '';
     wrapper.innerHTML = `
       ${isUser ? '' : '<div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>'}
-      <div class="rounded-xl border border-white/10 ${isUser ? 'bg-primary-600/20' : 'bg-white/5'} p-3 max-w-3xl">${escapeHtml(text)}</div>
+      <div class="max-w-3xl">${badge}<div class="rounded-xl border border-white/10 ${isUser ? 'bg-primary-600/20' : 'bg-white/5'} p-3">${escapeHtml(text)}</div></div>
     `;
     messagesEl.appendChild(wrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -195,11 +196,11 @@ Omni Chat
     const message = inputEl.value.trim();
     if (!message) return;
     inputEl.value = '';
-    appendMessage('user', message);
+  const provider = providerEl.value;
+  const model = modelEl.value;
+  appendMessage('user', message, provider, model);
     history.push({ role: 'user', content: message });
 
-    const provider = providerEl.value;
-    const model = modelEl.value;
     const title = chatTitleEl.value.trim();
     try {
       const res = await fetch('/api/chat', {
@@ -209,7 +210,7 @@ Omni Chat
       });
       const data = await res.json();
       const reply = data.reply || 'No reply received.';
-      appendMessage('assistant', reply);
+  appendMessage('assistant', reply, provider, model);
       history.push({ role: 'assistant', content: reply });
       if (data.chat_id) currentChatId = data.chat_id;
       if (data.title && !title) chatTitleEl.value = data.title;

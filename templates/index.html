@@ -19,9 +19,9 @@ Omni Chat
 
   <!-- Main chat area -->
   <section class="col-span-12 md:col-span-9 flex flex-col min-h-0">
-    <!-- Top bar: provider + model selectors -->
+    <!-- Top bar: provider + model selectors + centered title -->
     <div class="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4 mb-3 md:mb-4">
-      <div class="flex flex-col md:flex-row md:items-center gap-3">
+      <div class="flex items-center gap-3">
         <div class="flex items-center gap-2">
           <label for="provider" class="text-sm text-white/70">Provider</label>
           <div class="relative">
@@ -40,9 +40,13 @@ Omni Chat
             <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/70">▾</span>
           </div>
         </div>
+        <!-- Centered title -->
+        <div class="flex-1 flex justify-center">
+          <input id="chat-title" type="text" placeholder="Untitled chat" class="w-56 md:w-80 text-center rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 placeholder-white/40" />
+        </div>
         <div class="ms-auto flex items-center gap-2">
-          <input id="chat-title" type="text" placeholder="Untitled chat" class="w-48 md:w-64 rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 placeholder-white/40" />
           <button id="new-chat" class="inline-flex items-center rounded-lg bg-primary-600 hover:bg-primary-500 focus:ring-4 focus:ring-primary-400/40 px-4 py-2 text-sm font-medium transition">New Chat</button>
+          <button id="delete-chat" class="inline-flex items-center rounded-lg bg-red-600 hover:bg-red-500 focus:ring-4 focus:ring-red-400/40 px-3 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed" title="Delete current chat">Delete</button>
         </div>
       </div>
     </div>
@@ -78,6 +82,7 @@ Omni Chat
   const historyEl = document.getElementById('history');
   const clearHistoryEl = document.getElementById('clear-history');
   const chatTitleEl = document.getElementById('chat-title');
+  const deleteChatEl = document.getElementById('delete-chat');
 
   let providers = [];
   let history = [];
@@ -223,6 +228,17 @@ Omni Chat
 
   newChatEl.addEventListener('click', () => {
     startNewChat();
+  });
+
+  deleteChatEl.addEventListener('click', async () => {
+    if (!currentChatId) return;
+    try {
+      const res = await fetch(`/api/chats/${currentChatId}`, { method: 'DELETE' });
+      if (res.ok) {
+        startNewChat();
+        loadHistory();
+      }
+    } catch (_) {}
   });
 
   chatTitleEl.addEventListener('change', async () => {

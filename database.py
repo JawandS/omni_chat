@@ -1,6 +1,6 @@
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, UTC
 from typing import Optional
 
 from flask import current_app, g, Flask
@@ -24,6 +24,11 @@ def get_db() -> sqlite3.Connection:
     if "db" not in g:
         conn = sqlite3.connect(current_app.config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
         conn.row_factory = sqlite3.Row
+        # Ensure foreign key constraints are enforced (for ON DELETE CASCADE)
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+        except Exception:
+            pass
         g.db = conn
     return g.db  # type: ignore[no-any-return]
 
@@ -63,7 +68,7 @@ def commit() -> None:
 
 def create_chat(title: str, provider: str, model: str, now: Optional[str] = None) -> int:
     db = get_db()
-    ts = now or datetime.utcnow().isoformat()
+    ts = now or datetime.now(UTC).isoformat()
     cur = db.execute(
         "INSERT INTO chats (title, provider, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (title, provider, model, ts, ts),
@@ -72,7 +77,7 @@ def create_chat(title: str, provider: str, model: str, now: Optional[str] = None
 
 
 def update_chat_meta(chat_id: int, provider: Optional[str], model: Optional[str], now: Optional[str] = None) -> None:
-    ts = now or datetime.utcnow().isoformat()
+    ts = now or datetime.now(UTC).isoformat()
     get_db().execute(
         "UPDATE chats SET provider = ?, model = ?, updated_at = ? WHERE id = ?",
         (provider, model, ts, chat_id),
@@ -82,7 +87,7 @@ def update_chat_meta(chat_id: int, provider: Optional[str], model: Optional[str]
 def update_chat(chat_id: int, *, title: Optional[str] = None, provider: Optional[str] = None, model: Optional[str] = None,
                 now: Optional[str] = None) -> None:
     db = get_db()
-    ts = now or datetime.utcnow().isoformat()
+    ts = now or datetime.now(UTC).isoformat()
     if title:
         db.execute("UPDATE chats SET title = ?, updated_at = ? WHERE id = ?", (title, ts, chat_id))
     if provider is not None or model is not None:
@@ -93,7 +98,7 @@ def update_chat(chat_id: int, *, title: Optional[str] = None, provider: Optional
 
 
 def insert_message(chat_id: int, role: str, content: str, now: Optional[str] = None) -> None:
-    ts = now or datetime.utcnow().isoformat()
+    ts = now or datetime.now(UTC).isoformat()
     get_db().execute(
         "INSERT INTO messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
         (chat_id, role, content, ts),
@@ -101,7 +106,7 @@ def insert_message(chat_id: int, role: str, content: str, now: Optional[str] = N
 
 
 def touch_chat(chat_id: int, now: Optional[str] = None) -> None:
-    ts = now or datetime.utcnow().isoformat()
+    ts = now or datetime.now(UTC).isoformat()
     get_db().execute("UPDATE chats SET updated_at = ? WHERE id = ?", (ts, chat_id))
 
 
@@ -123,3 +128,11 @@ def get_messages(chat_id: int):
         "SELECT role, content, created_at FROM messages WHERE chat_id = ? ORDER BY id ASC",
         (chat_id,),
     ).fetchall()
+
+
+def delete_chat(chat_id: int) -> None:
+    """Delete a chat and its messages."""
+    db = get_db()
+    # Delete messages first to be safe regardless of PRAGMA being applied
+    db.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
+    db.execute("DELETE FROM chats WHERE id = ?", (chat_id,))

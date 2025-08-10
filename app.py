@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, UTC
 from flask import Flask, render_template, request, jsonify
 
 from database import (
@@ -13,6 +13,7 @@ from database import (
     get_chat as db_get_chat,
     get_messages,
     update_chat as db_update_chat,
+    delete_chat,
 )
 from chat import generate_reply
 
@@ -49,7 +50,7 @@ def create_app() -> Flask:
             title = (data.get("title") or "").strip()
             chat_id = data.get("chat_id")
 
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(UTC).isoformat()
 
             # Create chat if needed
             if not chat_id:
@@ -120,11 +121,21 @@ def create_app() -> Flask:
         model = data.get("model")
         if not any([title, provider, model]):
             return jsonify({"error": "no updates provided"}), 400
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(UTC).isoformat()
+        
         chat = db_get_chat(chat_id)
         if not chat:
             return jsonify({"error": "not found"}), 404
         db_update_chat(chat_id, title=title or None, provider=provider, model=model, now=now)
+        commit()
+        return jsonify({"ok": True})
+
+    @app.delete("/api/chats/<int:chat_id>")
+    def api_delete_chat(chat_id: int):
+        chat = db_get_chat(chat_id)
+        if not chat:
+            return jsonify({"error": "not found"}), 404
+        delete_chat(chat_id)
         commit()
         return jsonify({"ok": True})
 

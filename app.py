@@ -64,8 +64,9 @@ def create_app() -> Flask:
             # Save user message
             insert_message(chat_id, 'user', message, now)
 
-            # Generate and save assistant reply (placeholder echo)
-            reply_obj = generate_reply(provider, model, message)
+            # Generate and save assistant reply (OpenAI if configured, else echo). Pass history along.
+            history = data.get("history") or []
+            reply_obj = generate_reply(provider, model, message, history)
             reply = reply_obj.reply
             insert_message(chat_id, 'assistant', reply, now)
 
@@ -122,7 +123,7 @@ def create_app() -> Flask:
         if not any([title, provider, model]):
             return jsonify({"error": "no updates provided"}), 400
         now = datetime.now(UTC).isoformat()
-        
+
         chat = db_get_chat(chat_id)
         if not chat:
             return jsonify({"error": "not found"}), 404

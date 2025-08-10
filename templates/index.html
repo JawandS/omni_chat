@@ -28,7 +28,7 @@ Omni Chat
         <div class="flex items-center gap-2">
           <label for="provider" class="text-sm text-white/70">Provider</label>
           <div class="relative">
-            <select id="provider" data-testid="provider-select" class="appearance-none bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition">
+            <select id="provider" data-testid="provider-select" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition">
               <option>Loading…</option>
             </select>
             <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/70">▾</span>
@@ -37,7 +37,7 @@ Omni Chat
         <div class="flex items-center gap-2">
           <label for="model" class="text-sm text-white/70">Model</label>
           <div class="relative">
-            <select id="model" data-testid="model-select" class="appearance-none bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-48">
+            <select id="model" data-testid="model-select" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-48">
               <option>Select provider first</option>
             </select>
             <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/70">▾</span>
@@ -63,7 +63,7 @@ Omni Chat
   <form id="composer" class="mt-3 md:mt-4">
       <div class="relative">
     <textarea id="input" rows="1" placeholder="Message…" class="w-full resize-none rounded-2xl border border-white/10 bg-white/5 focus:bg-white/10 transition p-4 pr-24 outline-none focus:ring-2 focus:ring-primary-400/40"></textarea>
-    <button id="send" type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center rounded-xl bg-primary-600 hover:bg-primary-500 focus:ring-4 focus:ring-primary-400/40 px-3 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">Send ▶</button>
+    <button id="send" type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center rounded-xl bg-primary-600 hover:bg-primary-500 focus:ring-4 focus:ring-primary-400/40 px-3 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed">Send</button>
       </div>
       <p class="mt-2 text-xs text-white/50">Press Enter to send • Shift+Enter for newline</p>
     </form>

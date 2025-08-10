@@ -235,7 +235,23 @@ Omni Chat
     try {
       const res = await fetch(`/api/chats/${currentChatId}`, { method: 'DELETE' });
       if (res.ok) {
-        startNewChat();
+        // After deletion, load remaining chats and switch to the next one if available
+        try {
+          const listRes = await fetch('/api/chats');
+          if (listRes.ok) {
+            const payload = await listRes.json();
+            const chats = payload.chats || [];
+            if (chats.length > 0) {
+              await openChat(chats[0].id);
+            } else {
+              startNewChat();
+            }
+          } else {
+            startNewChat();
+          }
+        } catch (_) {
+          startNewChat();
+        }
         loadHistory();
       }
     } catch (_) {}

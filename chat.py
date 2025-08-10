@@ -59,6 +59,12 @@ def _format_history_for_openai(history: List[Dict[str, str]], latest_message: st
     return msgs
 
 
+def _openai_is_reasoning_model(model: str) -> bool:
+    m = (model or "").lower()
+    # Treat o3 family as reasoning models using the Responses API
+    return m.startswith("o3")
+
+
 def _openai_call(model: str, history: List[Dict[str, str]], message: str) -> Optional[str]:
     """Call OpenAI Chat Completions API with formatted history.
 
@@ -72,13 +78,24 @@ def _openai_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
     try:
         client = OpenAI(api_key=key)
         messages = _format_history_for_openai(history, message)
-        resp = client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0.2,
-        )
-        content = resp.choices[0].message.content if resp.choices else None
-        return content or None
+        if _openai_is_reasoning_model(model):
+            # Use Responses API for reasoning models like o3-mini
+            resp = client.responses.create(
+                model=model,
+                input=messages,
+                reasoning={"effort": "low"},
+            )
+            # The Responses API returns output_text
+            content = getattr(resp, "output_text", None)
+            return content or None
+        else:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.2,
+            )
+            content = resp.choices[0].message.content if resp.choices else None
+            return content or None
     except Exception:
         return None
 
@@ -114,6 +131,7 @@ def _gemini_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
     try:
         genai.configure(api_key=key)
         chat_history, user_text = _format_history_for_gemini(history, message)
+        # Gemini 2.5 and others are handled by the same client
         model_obj = genai.GenerativeModel(model)
         # Start a new chat with prior history and send the latest message
         chat = model_obj.start_chat(history=chat_history)

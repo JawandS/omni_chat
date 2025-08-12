@@ -65,7 +65,7 @@ Safe cleanup targets:
 rm -rf __pycache__ tests/__pycache__ .pytest_cache .mypy_cache
 rm -f instance/omni_chat.db
 ```
-Do NOT delete migrations (none exist) or source files. The DB will be recreated automatically on next app start.
+Do NOT delete migrations (none exist) or source files. The DB will be recreated automatically on next app start. Never delete instance/omni_chat.db, this is the production database. Never modify the production database.
 
 ## 4. Architectural Layout
 Top-level Python modules (no packages):
@@ -78,7 +78,7 @@ Frontend:
 - `static/providers.json`: Declares available providers/models for UI.
 
 Persistence:
-- SQLite file at `instance/omni_chat.db` (auto-created). Tests override with temp path.
+- SQLite file at `instance/omni_chat.db` (auto-created). Tests should use a temp path, never affect prod db.
 
 Environment:
 - `.env` path configurable via `app.config['ENV_PATH']`. API keys: `OPENAI_API_KEY`, `GEMINI_API_KEY`.

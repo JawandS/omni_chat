@@ -11,7 +11,9 @@ def test_gemini_provider_is_used(client):
     if r.status_code == 200:
         data = r.get_json()
         # Either gemini actual output or fallback prefix
-        assert data["reply"].startswith("[gemini/gemini-1.5-flash]:") or isinstance(data["reply"], str)
+        assert data["reply"].startswith("[gemini/gemini-1.5-flash]:") or isinstance(
+            data["reply"], str
+        )
 
 
 def test_unknown_provider_returns_400(client):

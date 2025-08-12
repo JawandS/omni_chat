@@ -9,7 +9,7 @@ def test_model_switch_updates_backend(client):
         "history": [],
         "provider": "openai",
         "model": "gpt-4o-mini",
-        "title": "Switch Test"
+        "title": "Switch Test",
     }
     r1 = client.post("/api/chat", json=payload)
     assert r1.status_code == 200
@@ -18,7 +18,10 @@ def test_model_switch_updates_backend(client):
     # Send second message after switching model to B
     payload2 = {
         "message": "Second",
-        "history": [{"role": "user", "content": "Hello"}, {"role": "assistant", "content": r1.get_json()["reply"]}],
+        "history": [
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": r1.get_json()["reply"]},
+        ],
         "provider": "openai",
         "model": "gpt-4o-realtime-preview-2024-12-17",
         "chat_id": chat_id,

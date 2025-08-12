@@ -26,15 +26,29 @@ def client(tmp_path):
 
 @pytest.fixture(autouse=True)
 def _force_echo_backend(monkeypatch):
-    """Ensure tests never hit the real OpenAI API and always use echo.
+    """Ensure tests never hit the real OpenAI/Gemini APIs.
 
     This isolates tests from external services and keeps assertions stable,
-    even if OPENAI_API_KEY is present in the environment.
+    even if API keys are present in the environment.
     """
     import chat as chat_mod  # import here to ensure module is loaded
-    # Force fallback path: placeholder key and no client
-    monkeypatch.setattr(chat_mod, "OPENAI_API_KEY", "PUT_OPENAI_API_KEY_HERE", raising=True)
+    import os
+    
+    # Clear environment variables for tests
+    for key in ["OPENAI_API_KEY", "GEMINI_API_KEY"]:
+        monkeypatch.delenv(key, raising=False)
+    
+    # Force fallback path by monkeypatching the key getter functions
+    monkeypatch.setattr(chat_mod, "_get_openai_key", lambda: "PUT_OPENAI_API_KEY_HERE")
+    monkeypatch.setattr(chat_mod, "_get_gemini_key", lambda: "PUT_GEMINI_API_KEY_HERE")
+    
+    # Disable the actual client libraries
     try:
-        monkeypatch.setattr(chat_mod, "OpenAI", None, raising=True)
+        monkeypatch.setattr(chat_mod, "OpenAI", None, raising=False)
+    except Exception:
+        pass
+        
+    try:
+        monkeypatch.setattr(chat_mod, "genai", None, raising=False)  
     except Exception:
         pass

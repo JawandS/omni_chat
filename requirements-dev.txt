@@ -1,0 +1,12 @@
+# Development & Testing dependencies (installs runtime deps too via -r requirements.txt)
+-r requirements.txt
+
+# Testing
+pytest>=7.4
+pytest-cov>=4.1.0
+
+# Code Quality / Tooling
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.5.0
+pre-commit>=3.4.0

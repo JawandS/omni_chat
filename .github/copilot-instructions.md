@@ -3,10 +3,14 @@
 Trust this document first. Only search the codebase if something here is missing or demonstrably wrong.
 
 ## 1. Repository Summary
-Lightweight local web chat UI (Flask) that lets a user converse with AI models from different providers (currently OpenAI & Gemini) and switch model/provider mid‑conversation. Persists chats/messages in a local SQLite database (`instance/omni_chat.db`). Exposes REST + SSE streaming endpoints; frontend is plain HTML/JS templates + tailwind. Tests fully mock external API calls so the suite runs offline.
+Lightweight local web chat UI (Flask) that lets a user converse with AI models from different providers (currently OpenAI & Gemini) and switch model/provider mid‑conversation. Persists chats/messages in a local SQLite database (`instance/omni_chat.db`). Exposes REST + SSE streaming endpoints; frontend is plain HTML/JS templates + tailwind. Tests fully mock external API calls so the suite runs offline. Always run
+```bash
+source .venv/bin/activate/
+```
+before executing other code
 
 ## 2. Tech Stack & Footprint
-- Language: Python 3.12 (README says 3.10+, tests pass on 3.12.3).
+- Language: Python 3.12 (README says 3.10+, tests pass on 3.12.3). Venv in `.venv`
 - Framework: Flask 3.x.
 - Data: SQLite (file path set via `app.config['DATABASE']`).
 - Env/config: `.env` (API keys) loaded with `python-dotenv`.
@@ -34,6 +38,7 @@ pip install -r requirements-dev.txt
 Idempotent: re-running the same pip install is safe. Don’t upgrade packages arbitrarily; tests validated against current spec.
 
 ### 3.2 Run Application (dev)
+Always activate the venv before running any commands.
 ```bash
 source .venv/bin/activate  # if not already
 python app.py
@@ -42,7 +47,7 @@ python app.py
 Optional: set API keys beforehand (see §6) or through UI settings.
 
 ### 3.3 Test Suite
-Requires dev deps installed (`requirements-dev.txt`).
+Requires dev deps installed (`requirements-dev.txt`). Always activate the venv before other commands
 ```bash
 source .venv/bin/activate
 pip install -r requirements-dev.txt  # safe if already installed
@@ -105,7 +110,7 @@ App auto-loads .env on startup and on key update endpoints. Missing keys yield s
 ## 8. Extending the System
 Add provider: implement call + streaming functions (mirroring `_openai_call` / `_openai_call_stream`), branch in `generate_reply*`, update `static/providers.json`, supply API key name mapping, add tests for missing key & basic flow.
 Add chat metadata: modify `chats` table (write migration or extend `_ensure_message_columns_exist` pattern) and adjust serialization in routes `/api/chats` & `/api/chats/<id>`.
-Add linting/CI: create GitHub Actions workflow (e.g., run `pip install -r requirements.txt && pytest -q && flake8 . && mypy .`).
+Add linting/CI: create GitHub Actions workflow (e.g., run `pip install -r requirements.txt && pytest -q && mypy .`).
 
 ## 9. Common Pitfalls & Guard Rails
 - Always install requirements before running tests; missing SDK imports are tolerated (graceful), but base libs (Flask, pytest) are required.
@@ -115,9 +120,10 @@ Add linting/CI: create GitHub Actions workflow (e.g., run `pip install -r requir
 - Validation: maintain order & error messages: "message is required", "provider is required", "model is required" for missing inputs (tests assert exact strings).
 
 ## 10. Manual Validation Checklist (Pre-PR)
+0. `source .venv/bin/activate` (always activate venv first)
 1. `pip install -r requirements-dev.txt` (or ensure already installed).
 2. `pytest -q` (expect all green: 62 tests).
-3. `flake8 . && mypy . && black --check .` (clean or fix).
+3. `mypy . && black --check .` (clean or fix).
 4. Run app: `python app.py` then test a chat (with or without keys—verify structured error if missing).
 5. Verify DB present or created (`instance/omni_chat.db`).
 6. If modifying schemas or providers, add/update tests reflecting new behavior.

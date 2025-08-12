@@ -509,6 +509,90 @@ def create_app() -> Flask:
         _load_env_into_process()
         return jsonify({"ok": True})
 
+    # Provider/model favorites & defaults ------------------------------------
+
+    PROVIDERS_JSON_PATH = os.path.join(app.root_path, "static", "providers.json")
+
+    def _load_providers_json() -> dict:
+        try:
+            with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+        except Exception:
+            return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+
+    def _write_providers_json(data: dict) -> None:
+        os.makedirs(os.path.dirname(PROVIDERS_JSON_PATH), exist_ok=True)
+        tmp_path = PROVIDERS_JSON_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, PROVIDERS_JSON_PATH)
+
+    def _validate_provider_model(provider: str, model: str) -> bool:
+        data = _load_providers_json()
+        for p in data.get("providers", []):
+            if p.get("id") == provider and model in (p.get("models") or []):
+                return True
+        return False
+
+    @app.get("/api/favorites")
+    def api_get_favorites():
+        data = _load_providers_json()
+        return jsonify({
+            "favorites": data.get("favorites", []),
+            "default": data.get("default", {})
+        })
+
+    @app.post("/api/favorites")
+    def api_add_favorite():
+        body = request.get_json(silent=True) or {}
+        provider = (body.get("provider") or "").strip()
+        model = (body.get("model") or "").strip()
+        if not provider or not model:
+            return jsonify({"error": "provider and model required"}), 400
+        if not _validate_provider_model(provider, model):
+            return jsonify({"error": "unknown provider/model"}), 400
+        data = _load_providers_json()
+        favs = data.setdefault("favorites", [])
+        key = f"{provider}:{model}"
+        if key not in favs:
+            favs.append(key)
+        _write_providers_json(data)
+        return jsonify({"ok": True, "favorites": favs})
+
+    @app.delete("/api/favorites")
+    def api_remove_favorite():
+        provider = (request.args.get("provider") or "").strip()
+        model = (request.args.get("model") or "").strip()
+        if not provider or not model:
+            return jsonify({"error": "provider and model required"}), 400
+        data = _load_providers_json()
+        key = f"{provider}:{model}"
+        favs = data.setdefault("favorites", [])
+        if key in favs:
+            favs.remove(key)
+        _write_providers_json(data)
+        return jsonify({"ok": True, "favorites": favs})
+
+    @app.put("/api/default-model")
+    def api_set_default_model():
+        body = request.get_json(silent=True) or {}
+        provider = (body.get("provider") or "").strip()
+        model = (body.get("model") or "").strip()
+        if not provider or not model:
+            return jsonify({"error": "provider and model required"}), 400
+        if not _validate_provider_model(provider, model):
+            return jsonify({"error": "unknown provider/model"}), 400
+        data = _load_providers_json()
+        data["default"] = {"provider": provider, "model": model}
+        _write_providers_json(data)
+        return jsonify({"ok": True, "default": data["default"]})
+
+    @app.get("/api/providers-config")
+    def api_get_providers_config():
+        return jsonify(_load_providers_json())
+
     return app
 
 

@@ -220,11 +220,16 @@ Omni Chat
     const badge = `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>`;
     assistantWrapper.innerHTML = `
       <div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>
-      <div class="max-w-3xl">${badge}<div class="rounded-xl border border-white/10 bg-white/5 p-3"><span id="streaming-content-${messageId}"></span><span id="typing-indicator-${messageId}">▋</span></div></div>
+      <div class="max-w-3xl">${badge}<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+        <span id="loading-indicator-${messageId}" class="text-white/60">Thinking...</span>
+        <span id="streaming-content-${messageId}" style="display: none;"></span>
+        <span id="typing-indicator-${messageId}" style="display: none;">▋</span>
+      </div></div>
     `;
     messagesEl.appendChild(assistantWrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     
+    const loadingIndicator = document.getElementById(`loading-indicator-${messageId}`);
     const streamingContent = document.getElementById(`streaming-content-${messageId}`);
     const typingIndicator = document.getElementById(`typing-indicator-${messageId}`);
     let fullReply = '';
@@ -242,6 +247,7 @@ Omni Chat
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let streamingStarted = false;
       
       while (true) {
         const { done, value } = await reader.read();
@@ -260,6 +266,14 @@ Omni Chat
                 if (data.chat_id) currentChatId = data.chat_id;
                 if (data.title && !title) chatTitleEl.value = data.title;
               } else if (data.type === 'token') {
+                // Start streaming: hide loading, show streaming content and typing indicator
+                if (!streamingStarted) {
+                  streamingStarted = true;
+                  if (loadingIndicator) loadingIndicator.style.display = 'none';
+                  if (streamingContent) streamingContent.style.display = 'inline';
+                  if (typingIndicator) typingIndicator.style.display = 'inline';
+                }
+                
                 // Append token to the streaming content
                 fullReply += data.token;
                 if (streamingContent) {
@@ -268,8 +282,10 @@ Omni Chat
                 }
               } else if (data.type === 'error') {
                 // Handle errors
+                if (loadingIndicator) loadingIndicator.style.display = 'none';
                 if (typingIndicator) typingIndicator.style.display = 'none';
                 if (streamingContent) {
+                  streamingContent.style.display = 'inline';
                   streamingContent.textContent = data.error || 'Provider error';
                   streamingContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
                 }
@@ -306,8 +322,10 @@ Omni Chat
       
     } catch (err) {
       console.error('Streaming error:', err);
+      if (loadingIndicator) loadingIndicator.style.display = 'none';
       if (typingIndicator) typingIndicator.style.display = 'none';
       if (streamingContent) {
+        streamingContent.style.display = 'inline';
         streamingContent.textContent = 'Error contacting server.';
         streamingContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
       }

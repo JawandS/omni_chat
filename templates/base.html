@@ -36,14 +36,24 @@
     select option { color: #0f172a; background-color: #ffffff; }
     
     /* Typing indicator animation */
-    #typing-indicator {
+    [id^="typing-indicator-"] {
       animation: blink 1s infinite;
       color: #60a5fa;
+    }
+    
+    /* Loading indicator animation */
+    [id^="loading-indicator-"] {
+      animation: pulse 1.5s ease-in-out infinite;
     }
     
     @keyframes blink {
       0%, 50% { opacity: 1; }
       51%, 100% { opacity: 0; }
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
     }
   </style>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">

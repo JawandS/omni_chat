@@ -376,6 +376,9 @@ Omni Chat
                 // Handle metadata (chat_id, title, etc.)
                 if (data.chat_id) currentChatId = data.chat_id;
                 if (data.title && !title) chatTitleEl.value = data.title;
+                // Ensure sidebar history reflects newly created chat immediately
+                // (previously only refreshed after full streaming completion)
+                loadHistory();
               } else if (data.type === 'token') {
                 console.log('[FRONTEND] Received token:', JSON.stringify(data.token));
                 // Start streaming: hide loading, show streaming content and typing indicator

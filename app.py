@@ -209,7 +209,8 @@ def create_app() -> Flask:
 
             chat_id = data.get("chat_id")
             title = (data.get("title") or "").strip()
-            now = datetime.now(UTC).isoformat()
+            # Capture initial timestamp when request received
+            request_ts = datetime.now(UTC).isoformat()
 
             # Generate default title if needed
             if not chat_id and not title:
@@ -218,13 +219,16 @@ def create_app() -> Flask:
                 )
 
             # Create or update chat and commit immediately for streaming
-            chat_id = _create_or_update_chat(chat_id, title, provider, model, now)
+            chat_id = _create_or_update_chat(chat_id, title, provider, model, request_ts)
             commit()
 
-            # Save user message and commit
+            # Save user message with its own timestamp and immediately bump chat updated_at
+            user_msg_ts = datetime.now(UTC).isoformat()
             insert_message(
-                chat_id, "user", message, now, provider=provider, model=model
+                chat_id, "user", message, user_msg_ts, provider=provider, model=model
             )
+            # Touch chat so it appears/updates in history sidebar right after the user sends a message
+            touch_chat(chat_id, user_msg_ts)
             commit()
             logger.info(f"[STREAMING] Saved user message to chat {chat_id}")
 
@@ -256,15 +260,17 @@ def create_app() -> Flask:
                     if full_reply:
                         with app.app_context():
                             try:
+                                # Use a fresh timestamp when assistant reply fully ready
+                                assistant_ts = datetime.now(UTC).isoformat()
                                 insert_message(
                                     chat_id,
                                     "assistant",
                                     full_reply,
-                                    now,
+                                    assistant_ts,
                                     provider=provider,
                                     model=model,
                                 )
-                                touch_chat(chat_id, now)
+                                touch_chat(chat_id, assistant_ts)
                                 commit()
                                 logger.info(
                                     f"[STREAMING] Saved assistant reply to chat {chat_id}"

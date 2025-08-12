@@ -24,12 +24,11 @@ Omni Chat
       <div class="flex items-center gap-3">
         <!-- Favorites dropdown -->
         <div class="flex items-center gap-2">
-          <label for="favorite-model" class="text-sm text-white/70">Favorites</label>
-          <div class="relative">
-            <select id="favorite-model" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-40">
-              <option value=""></option>
+          <div class="relative w-24"> <!-- fixed width to prevent expansion -->
+            <select id="favorite-model" class="w-full appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-6 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition truncate" aria-label="Favorite model quick select">
+              <option value="" disabled selected>Favorites</option>
             </select>
-            <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/70">▾</span>
+            <span class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-white/70">▾</span>
           </div>
         </div>
         <div class="flex items-center gap-2">
@@ -150,12 +149,14 @@ Omni Chat
     updateFavoriteStar();
   }
   function populateFavoritesDropdown() {
-    const options = ['<option value=""></option>'];
+    const options = ['<option value="" disabled>Favorites</option>'];
     for (const fav of favorites) {
       const [prov, model] = fav.split(':');
       options.push(`<option value="${fav}">${prov}:${model}</option>`);
     }
     favoriteModelEl.innerHTML = options.join('');
+    // Always ensure placeholder is selected after repopulation
+    favoriteModelEl.selectedIndex = 0;
   }
 
   favoriteModelEl.addEventListener('change', () => {
@@ -167,6 +168,8 @@ Omni Chat
       populateModels();
       modelEl.value = model;
       updateFavoriteStar();
+      // Reset dropdown back to placeholder so selection doesn't persist visually
+      favoriteModelEl.selectedIndex = 0;
     }
   });
 

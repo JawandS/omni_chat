@@ -40,10 +40,7 @@ def test_put_keys_gemini(client):
 
 def test_put_keys_both(client):
     """Test setting both API keys."""
-    payload = {
-        "openai": "sk-test-key-123",
-        "gemini": "gemini-test-key-456"
-    }
+    payload = {"openai": "sk-test-key-123", "gemini": "gemini-test-key-456"}
     resp = client.put("/api/keys", json=payload)
     assert resp.status_code == 200
     data = resp.get_json()
@@ -58,7 +55,7 @@ def test_put_keys_empty_string_removes_key(client):
     payload = {"openai": "sk-test-key-123"}
     resp = client.put("/api/keys", json=payload)
     assert resp.status_code == 200
-    
+
     # Then remove it with empty string
     payload = {"openai": ""}
     resp = client.put("/api/keys", json=payload)
@@ -74,7 +71,7 @@ def test_put_keys_null_removes_key(client):
     payload = {"openai": "sk-test-key-123"}
     resp = client.put("/api/keys", json=payload)
     assert resp.status_code == 200
-    
+
     # Then remove it with null
     payload = {"openai": None}
     resp = client.put("/api/keys", json=payload)
@@ -89,7 +86,7 @@ def test_delete_key_openai(client):
     # First set a key
     payload = {"openai": "sk-test-key-123"}
     client.put("/api/keys", json=payload)
-    
+
     # Then delete it
     resp = client.delete("/api/keys/openai")
     assert resp.status_code == 200
@@ -102,7 +99,7 @@ def test_delete_key_gemini(client):
     # First set a key
     payload = {"gemini": "gemini-test-key-456"}
     client.put("/api/keys", json=payload)
-    
+
     # Then delete it
     resp = client.delete("/api/keys/gemini")
     assert resp.status_code == 200
@@ -124,7 +121,7 @@ def test_delete_key_case_insensitive(client):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["ok"] is True
-    
+
     resp = client.delete("/api/keys/GEMINI")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -134,21 +131,18 @@ def test_delete_key_case_insensitive(client):
 def test_keys_round_trip(client):
     """Test full round trip of setting, getting, and deleting keys."""
     # Set keys
-    payload = {
-        "openai": "sk-test-key-123",
-        "gemini": "gemini-test-key-456"
-    }
+    payload = {"openai": "sk-test-key-123", "gemini": "gemini-test-key-456"}
     resp = client.put("/api/keys", json=payload)
     assert resp.status_code == 200
-    
+
     # Get keys (Note: in test environment, this might still return empty due to test isolation)
     resp = client.get("/api/keys")
     assert resp.status_code == 200
-    
+
     # Delete one key
     resp = client.delete("/api/keys/openai")
     assert resp.status_code == 200
-    
+
     # Delete the other key
     resp = client.delete("/api/keys/gemini")
     assert resp.status_code == 200

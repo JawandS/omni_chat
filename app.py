@@ -28,13 +28,13 @@ from chat import generate_reply, generate_reply_stream
 
 def _validate_chat_request(data: dict) -> tuple[str, str, str]:
     """Validate and extract required chat parameters.
-    
+
     Args:
         data: Request JSON data.
-        
+
     Returns:
         Tuple of (message, provider, model).
-        
+
     Raises:
         ValueError: If required parameters are missing or invalid.
     """
@@ -45,24 +45,26 @@ def _validate_chat_request(data: dict) -> tuple[str, str, str]:
     provider = (data.get("provider") or "").strip()
     if not provider:
         raise ValueError("provider is required")
-    
+
     model = (data.get("model") or "").strip()
     if not model:
         raise ValueError("model is required")
-    
+
     return message, provider, model
 
 
-def _create_or_update_chat(chat_id: Optional[int], title: str, provider: str, model: str, now: str) -> int:
+def _create_or_update_chat(
+    chat_id: Optional[int], title: str, provider: str, model: str, now: str
+) -> int:
     """Create a new chat or update existing chat metadata.
-    
+
     Args:
         chat_id: Optional existing chat ID.
         title: Chat title.
         provider: AI provider name.
         model: AI model name.
         now: Current timestamp.
-        
+
     Returns:
         Chat ID (new or existing).
     """
@@ -76,7 +78,7 @@ def _create_or_update_chat(chat_id: Optional[int], title: str, provider: str, mo
 
 def create_app() -> Flask:
     """Application factory to create and configure the Flask app.
-    
+
     Returns:
         Configured Flask application instance.
     """
@@ -85,10 +87,12 @@ def create_app() -> Flask:
     # Set up logging
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-    
+
     # Safety check: warn if running in apparent test mode without proper test setup
-    if app.config.get('TESTING') and not os.environ.get('PYTEST_CURRENT_TEST'):
-        logger.warning("App configured for testing but not running under pytest - this may affect production resources!")
+    if app.config.get("TESTING") and not os.environ.get("PYTEST_CURRENT_TEST"):
+        logger.warning(
+            "App configured for testing but not running under pytest - this may affect production resources!"
+        )
 
     # Configure DB integration (path, teardown)
     db_init_app(app)
@@ -116,14 +120,14 @@ def create_app() -> Flask:
                 "model": str,
                 "title": str (optional)
             }
-            
+
         Returns:
             JSON response with reply, chat_id, and optional error/warning information.
         """
         try:
             data = request.get_json(silent=True) or {}
             message, provider, model = _validate_chat_request(data)
-            
+
             logger.info(f"[NON-STREAMING] Received message: {message[:50]}...")
             logger.info(f"[NON-STREAMING] Provider: {provider}, Model: {model}")
 
@@ -133,19 +137,30 @@ def create_app() -> Flask:
 
             # Generate default title if needed
             if not chat_id and not title:
-                title = (message[:48] + "…") if len(message) > 49 else message or "New chat"
+                title = (
+                    (message[:48] + "…") if len(message) > 49 else message or "New chat"
+                )
 
             # Create or update chat
             chat_id = _create_or_update_chat(chat_id, title, provider, model, now)
 
             # Save user message
-            insert_message(chat_id, 'user', message, now, provider=provider, model=model)
+            insert_message(
+                chat_id, "user", message, now, provider=provider, model=model
+            )
             logger.info(f"[NON-STREAMING] Saved user message to chat {chat_id}")
 
             # Generate and save assistant reply
             history = data.get("history") or []
             reply_obj = generate_reply(provider, model, message, history)
-            insert_message(chat_id, 'assistant', reply_obj.reply, now, provider=provider, model=model)
+            insert_message(
+                chat_id,
+                "assistant",
+                reply_obj.reply,
+                now,
+                provider=provider,
+                model=model,
+            )
             logger.info(f"[NON-STREAMING] Saved assistant reply to chat {chat_id}")
 
             # Update chat timestamp and commit
@@ -153,13 +168,17 @@ def create_app() -> Flask:
             commit()
 
             # Build response
-            response_data = {"reply": reply_obj.reply, "chat_id": chat_id, "title": title or None}
+            response_data = {
+                "reply": reply_obj.reply,
+                "chat_id": chat_id,
+                "title": title or None,
+            }
             for attr in ["warning", "error", "missing_key_for"]:
                 if hasattr(reply_obj, attr) and getattr(reply_obj, attr):
                     response_data[attr] = getattr(reply_obj, attr)
-                    
+
             return jsonify(response_data)
-            
+
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         except Exception:  # pragma: no cover
@@ -177,31 +196,39 @@ def create_app() -> Flask:
                 "model": str,
                 "title": str (optional)
             }
-            
+
         Returns:
             Server-sent events stream with chat responses.
         """
         try:
             data = request.get_json(silent=True) or {}
             message, provider, model = _validate_chat_request(data)
-            
+
             logger.info(f"[STREAMING] Received message: {message[:50]}...")
             logger.info(f"[STREAMING] Provider: {provider}, Model: {model}")
 
             chat_id = data.get("chat_id")
             title = (data.get("title") or "").strip()
-            now = datetime.now(UTC).isoformat()
+            # Capture initial timestamp when request received
+            request_ts = datetime.now(UTC).isoformat()
 
             # Generate default title if needed
             if not chat_id and not title:
-                title = (message[:48] + "…") if len(message) > 49 else message or "New chat"
+                title = (
+                    (message[:48] + "…") if len(message) > 49 else message or "New chat"
+                )
 
             # Create or update chat and commit immediately for streaming
-            chat_id = _create_or_update_chat(chat_id, title, provider, model, now)
+            chat_id = _create_or_update_chat(chat_id, title, provider, model, request_ts)
             commit()
 
-            # Save user message and commit
-            insert_message(chat_id, 'user', message, now, provider=provider, model=model)
+            # Save user message with its own timestamp and immediately bump chat updated_at
+            user_msg_ts = datetime.now(UTC).isoformat()
+            insert_message(
+                chat_id, "user", message, user_msg_ts, provider=provider, model=model
+            )
+            # Touch chat so it appears/updates in history sidebar right after the user sends a message
+            touch_chat(chat_id, user_msg_ts)
             commit()
             logger.info(f"[STREAMING] Saved user message to chat {chat_id}")
 
@@ -210,14 +237,16 @@ def create_app() -> Flask:
                 try:
                     # Get history for context
                     history = data.get("history") or []
-                    
+
                     # Send initial metadata
                     yield f"data: {json.dumps({'type': 'metadata', 'chat_id': chat_id, 'title': title or None})}\n\n"
-                    
+
                     full_reply = ""
-                    
+
                     # Generate streaming reply
-                    for chunk in generate_reply_stream(provider, model, message, history):
+                    for chunk in generate_reply_stream(
+                        provider, model, message, history
+                    ):
                         if chunk.token:
                             full_reply += chunk.token
                             yield f"data: {json.dumps({'type': 'token', 'token': chunk.token})}\n\n"
@@ -226,31 +255,46 @@ def create_app() -> Flask:
                             return
                         elif chunk.warning:
                             yield f"data: {json.dumps({'type': 'warning', 'warning': chunk.warning})}\n\n"
-                    
+
                     # Save the complete reply to database in a new app context
                     if full_reply:
                         with app.app_context():
                             try:
-                                insert_message(chat_id, 'assistant', full_reply, now, provider=provider, model=model)
-                                touch_chat(chat_id, now)
+                                # Use a fresh timestamp when assistant reply fully ready
+                                assistant_ts = datetime.now(UTC).isoformat()
+                                insert_message(
+                                    chat_id,
+                                    "assistant",
+                                    full_reply,
+                                    assistant_ts,
+                                    provider=provider,
+                                    model=model,
+                                )
+                                touch_chat(chat_id, assistant_ts)
                                 commit()
-                                logger.info(f"[STREAMING] Saved assistant reply to chat {chat_id}")
+                                logger.info(
+                                    f"[STREAMING] Saved assistant reply to chat {chat_id}"
+                                )
                             except Exception as e:
                                 logger.error(f"[STREAMING] Error saving reply: {e}")
-                    
+
                     # Send completion signal
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                    
+
                 except Exception as e:
                     logger.error(f"[STREAMING] Error in generator: {str(e)}")
                     yield f"data: {json.dumps({'type': 'error', 'error': f'Stream error: {str(e)}'})}\n\n"
 
-            return Response(generate(), mimetype='text/event-stream', headers={
-                'Cache-Control': 'no-cache',
-                'Connection': 'keep-alive',
-                'Access-Control-Allow-Origin': '*',
-            })
-            
+            return Response(
+                generate(),
+                mimetype="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                },
+            )
+
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         except Exception as e:  # pragma: no cover
@@ -260,88 +304,92 @@ def create_app() -> Flask:
     @app.get("/api/chats")
     def api_list_chats():
         """Get a list of all chats ordered by most recent activity.
-        
+
         Returns:
             JSON response with list of chat metadata.
         """
         rows = list_chats()
-        return jsonify({
-            "chats": [
-                {
-                    "id": r["id"],
-                    "title": r["title"],
-                    "provider": r["provider"],
-                    "model": r["model"],
-                    "updated_at": r["updated_at"],
-                }
-                for r in rows
-            ]
-        })
+        return jsonify(
+            {
+                "chats": [
+                    {
+                        "id": r["id"],
+                        "title": r["title"],
+                        "provider": r["provider"],
+                        "model": r["model"],
+                        "updated_at": r["updated_at"],
+                    }
+                    for r in rows
+                ]
+            }
+        )
 
     @app.get("/api/chats/<int:chat_id>")
     def api_get_chat(chat_id: int):
         """Get a specific chat with all its messages.
-        
+
         Args:
             chat_id: The chat ID to retrieve.
-            
+
         Returns:
             JSON response with chat metadata and messages, or 404 if not found.
         """
         chat = db_get_chat(chat_id)
         if not chat:
             return jsonify({"error": "not found"}), 404
-            
+
         messages = get_messages(chat_id)
-        return jsonify({
-            "chat": {
-                "id": chat["id"],
-                "title": chat["title"],
-                "provider": chat["provider"],
-                "model": chat["model"],
-                "created_at": chat["created_at"],
-                "updated_at": chat["updated_at"],
-            },
-            "messages": [
-                {
-                    "role": m["role"],
-                    "content": m["content"],
-                    "provider": m["provider"],
-                    "model": m["model"],
-                    "created_at": m["created_at"]
-                }
-                for m in messages
-            ],
-        })
+        return jsonify(
+            {
+                "chat": {
+                    "id": chat["id"],
+                    "title": chat["title"],
+                    "provider": chat["provider"],
+                    "model": chat["model"],
+                    "created_at": chat["created_at"],
+                    "updated_at": chat["updated_at"],
+                },
+                "messages": [
+                    {
+                        "role": m["role"],
+                        "content": m["content"],
+                        "provider": m["provider"],
+                        "model": m["model"],
+                        "created_at": m["created_at"],
+                    }
+                    for m in messages
+                ],
+            }
+        )
 
     @app.patch("/api/chats/<int:chat_id>")
     def api_update_chat(chat_id: int):
         """Update chat metadata (title, provider, model).
-        
+
         Args:
             chat_id: The chat ID to update.
-            
+
         Expected JSON body:
             {
                 "title": str (optional),
                 "provider": str (optional),
                 "model": str (optional)
             }
-            
+
         Returns:
             JSON response with success status or error.
         """
         if not db_get_chat(chat_id):
             return jsonify({"error": "not found"}), 404
-            
+
         data = request.get_json(silent=True) or {}
         title = (data.get("title") or "").strip() or None
         provider = data.get("provider")
         model = data.get("model")
-        
+
         if not any([title, provider, model]):
             return jsonify({"error": "no updates provided"}), 400
-        
+
         now = datetime.now(UTC).isoformat()
         db_update_chat(chat_id, title=title, provider=provider, model=model, now=now)
         commit()
@@ -350,25 +398,25 @@ def create_app() -> Flask:
     @app.delete("/api/chats/<int:chat_id>")
     def api_delete_chat(chat_id: int):
         """Delete a chat and all its messages.
-        
+
         Args:
             chat_id: The chat ID to delete.
-            
+
         Returns:
             JSON response with success status or 404 if not found.
         """
         if not db_get_chat(chat_id):
             return jsonify({"error": "not found"}), 404
-            
+
         delete_chat(chat_id)
         commit()
         return jsonify({"ok": True})
 
     # Settings: API keys -----------------------------------------------------
-    
+
     def _get_env_path() -> str:
         """Get the path to the .env file for environment variable storage.
-        
+
         Returns:
             Path to the .env file.
         """
@@ -381,7 +429,7 @@ def create_app() -> Flask:
     @app.get("/api/keys")
     def api_get_keys():
         """Get current API keys for all providers.
-        
+
         Returns:
             JSON response with current API key values (or empty strings if not set).
         """
@@ -389,36 +437,38 @@ def create_app() -> Flask:
         values = dotenv_values(_get_env_path())
         openai_key = values.get("OPENAI_API_KEY") if values else None
         gemini_key = values.get("GEMINI_API_KEY") if values else None
-        
+
         # If not in file, try process env
         openai_key = openai_key or os.getenv("OPENAI_API_KEY", "")
         gemini_key = gemini_key or os.getenv("GEMINI_API_KEY", "")
-        
-        return jsonify({
-            "openai": openai_key,
-            "gemini": gemini_key,
-        })
+
+        return jsonify(
+            {
+                "openai": openai_key,
+                "gemini": gemini_key,
+            }
+        )
 
     @app.put("/api/keys")
     def api_put_keys():
         """Set or update API keys for providers.
-        
+
         Expected JSON body:
             {
                 "openai": str (optional),
                 "gemini": str (optional)
             }
-            
+
         Returns:
             JSON response with update status and the keys that were updated.
         """
         data = request.get_json(silent=True) or {}
         env_file = _get_env_path()
         os.makedirs(os.path.dirname(env_file), exist_ok=True)
-        
+
         updated: dict[str, Optional[str]] = {}
         key_mapping = [("OPENAI_API_KEY", "openai"), ("GEMINI_API_KEY", "gemini")]
-        
+
         for env_key, body_key in key_mapping:
             if body_key in data:
                 value = data.get(body_key)
@@ -435,35 +485,119 @@ def create_app() -> Flask:
                     set_key(env_file, env_key, str(value), quote_mode="never")
                     os.environ[env_key] = str(value)
                     updated[body_key] = str(value)
-        
+
         _load_env_into_process()
         return jsonify({"ok": True, "updated": updated})
 
     @app.delete("/api/keys/<provider>")
     def api_delete_key(provider: str):
         """Delete API key for a specific provider.
-        
+
         Args:
             provider: Provider name ('openai' or 'gemini').
-            
+
         Returns:
             JSON response with success status or error if provider is unknown.
         """
         key_mapping = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
         env_key = key_mapping.get(provider.lower())
-        
+
         if not env_key:
             return jsonify({"error": "unknown provider"}), 400
-        
+
         env_file = _get_env_path()
         try:
             unset_key(env_file, env_key)
         except Exception:
             pass
-        
+
         os.environ.pop(env_key, None)
         _load_env_into_process()
         return jsonify({"ok": True})
+
+    # Provider/model favorites & defaults ------------------------------------
+
+    PROVIDERS_JSON_PATH = os.path.join(app.root_path, "static", "providers.json")
+
+    def _load_providers_json() -> dict:
+        try:
+            with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+        except Exception:
+            return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+
+    def _write_providers_json(data: dict) -> None:
+        os.makedirs(os.path.dirname(PROVIDERS_JSON_PATH), exist_ok=True)
+        tmp_path = PROVIDERS_JSON_PATH + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, PROVIDERS_JSON_PATH)
+
+    def _validate_provider_model(provider: str, model: str) -> bool:
+        data = _load_providers_json()
+        for p in data.get("providers", []):
+            if p.get("id") == provider and model in (p.get("models") or []):
+                return True
+        return False
+
+    @app.get("/api/favorites")
+    def api_get_favorites():
+        data = _load_providers_json()
+        return jsonify({
+            "favorites": data.get("favorites", []),
+            "default": data.get("default", {})
+        })
+
+    @app.post("/api/favorites")
+    def api_add_favorite():
+        body = request.get_json(silent=True) or {}
+        provider = (body.get("provider") or "").strip()
+        model = (body.get("model") or "").strip()
+        if not provider or not model:
+            return jsonify({"error": "provider and model required"}), 400
+        if not _validate_provider_model(provider, model):
+            return jsonify({"error": "unknown provider/model"}), 400
+        data = _load_providers_json()
+        favs = data.setdefault("favorites", [])
+        key = f"{provider}:{model}"
+        if key not in favs:
+            favs.append(key)
+        _write_providers_json(data)
+        return jsonify({"ok": True, "favorites": favs})
+
+    @app.delete("/api/favorites")
+    def api_remove_favorite():
+        provider = (request.args.get("provider") or "").strip()
+        model = (request.args.get("model") or "").strip()
+        if not provider or not model:
+            return jsonify({"error": "provider and model required"}), 400
+        data = _load_providers_json()
+        key = f"{provider}:{model}"
+        favs = data.setdefault("favorites", [])
+        if key in favs:
+            favs.remove(key)
+        _write_providers_json(data)
+        return jsonify({"ok": True, "favorites": favs})
+
+    @app.put("/api/default-model")
+    def api_set_default_model():
+        body = request.get_json(silent=True) or {}
+        provider = (body.get("provider") or "").strip()
+        model = (body.get("model") or "").strip()
+        if not provider or not model:
+            return jsonify({"error": "provider and model required"}), 400
+        if not _validate_provider_model(provider, model):
+            return jsonify({"error": "unknown provider/model"}), 400
+        data = _load_providers_json()
+        data["default"] = {"provider": provider, "model": model}
+        _write_providers_json(data)
+        return jsonify({"ok": True, "default": data["default"]})
+
+    @app.get("/api/providers-config")
+    def api_get_providers_config():
+        return jsonify(_load_providers_json())
 
     return app
 

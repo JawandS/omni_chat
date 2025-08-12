@@ -1,14 +1,24 @@
 from app import create_app  # unused but keeps import under test for coverage
 
 
-def _create_chat(client, *, message="Hello", provider="openai", model="gpt-4o-mini", title="Test Chat"):
-    resp = client.post("/api/chat", json={
-        "message": message,
-        "history": [],
-        "provider": provider,
-        "model": model,
-        "title": title,
-    })
+def _create_chat(
+    client,
+    *,
+    message="Hello",
+    provider="openai",
+    model="gpt-4o-mini",
+    title="Test Chat",
+):
+    resp = client.post(
+        "/api/chat",
+        json={
+            "message": message,
+            "history": [],
+            "provider": provider,
+            "model": model,
+            "title": title,
+        },
+    )
     assert resp.status_code == 200
     data = resp.get_json()
     assert "chat_id" in data
@@ -21,7 +31,9 @@ def test_create_and_get_chat(client):
         assert data.get("missing_key_for") == "openai"
         assert data.get("reply", "") == ""
     else:
-        assert data["reply"].startswith("[openai/gpt-4o-mini]:") or data["reply"].startswith("Hello")
+        assert data["reply"].startswith("[openai/gpt-4o-mini]:") or data[
+            "reply"
+        ].startswith("Hello")
 
     # Fetch chat details
     r = client.get(f"/api/chats/{chat_id}")

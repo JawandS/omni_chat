@@ -1,4 +1,12 @@
 {
+  "default": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash"
+  },
+  "favorites": [
+    "gemini:gemini-2.5-flash",
+    "openai:gpt-4o-mini"
+  ],
   "providers": [
     {
       "id": "gemini",

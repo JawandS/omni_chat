@@ -22,6 +22,16 @@ Omni Chat
     <!-- Top bar: provider + model selectors + centered title -->
     <div class="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4 mb-3 md:mb-4">
       <div class="flex items-center gap-3">
+        <!-- Favorites dropdown -->
+        <div class="flex items-center gap-2">
+          <label for="favorite-model" class="text-sm text-white/70">Favorites</label>
+          <div class="relative">
+            <select id="favorite-model" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-40">
+              <option value=""></option>
+            </select>
+            <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/70">▾</span>
+          </div>
+        </div>
         <div class="flex items-center gap-2">
           <label for="provider" class="text-sm text-white/70">Provider</label>
           <div class="relative">
@@ -34,10 +44,13 @@ Omni Chat
         <div class="flex items-center gap-2">
           <label for="model" class="text-sm text-white/70">Model</label>
           <div class="relative">
-            <select id="model" data-testid="model-select" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-48">
-              <option>Select provider first</option>
-            </select>
-            <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/70">▾</span>
+            <div class="relative">
+              <select id="model" data-testid="model-select" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-14 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-48">
+                <option>Select provider first</option>
+              </select>
+              <span class="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 text-white/70">▾</span>
+              <button id="toggle-favorite" title="Toggle favorite" class="absolute right-1 top-1/2 -translate-y-1/2 text-white/40 hover:text-yellow-400 transition" aria-label="Toggle favorite">☆</button>
+            </div>
           </div>
         </div>
         <!-- Centered title -->
@@ -76,7 +89,9 @@ Omni Chat
 
 <script>
   const providerEl = document.getElementById('provider');
+  const favoriteModelEl = document.getElementById('favorite-model');
   const modelEl = document.getElementById('model');
+  const toggleFavoriteBtn = document.getElementById('toggle-favorite');
   const messagesEl = document.getElementById('messages');
   const composerEl = document.getElementById('composer');
   const inputEl = document.getElementById('input');
@@ -95,20 +110,27 @@ Omni Chat
   }
 
   let providers = [];
+  let favorites = [];
+  let defaultSelection = { provider: null, model: null };
   let history = [];
   let currentChatId = null;
   let isSubmitting = false; // Flag to prevent duplicate submissions
 
   async function loadProviders() {
     try {
-      const res = await fetch('/static/providers.json', { cache: 'no-store' });
+      const res = await fetch('/api/providers-config', { cache: 'no-store' });
       const data = await res.json();
       providers = data.providers || [];
+      favorites = data.favorites || [];
+      defaultSelection = data.default || { provider: null, model: null };
       providerEl.innerHTML = providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
-      if (providers.length) {
+      if (defaultSelection.provider && providers.some(p => p.id === defaultSelection.provider)) {
+        providerEl.value = defaultSelection.provider;
+      } else if (providers.length) {
         providerEl.value = providers[0].id;
-        populateModels();
       }
+      populateModels();
+      populateFavoritesDropdown();
     } catch (e) {
       // Fallback
       providers = [{ id: 'openai', name: 'OpenAI', models: ['gpt-4o-mini'] }];
@@ -121,13 +143,77 @@ Omni Chat
     const p = providers.find(x => x.id === providerEl.value);
     const models = p ? p.models : [];
     modelEl.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('') || '<option>No models</option>';
+    // If default model matches current provider select it
+    if (defaultSelection.provider === providerEl.value && defaultSelection.model && models.includes(defaultSelection.model)) {
+      modelEl.value = defaultSelection.model;
+    }
+    updateFavoriteStar();
+  }
+  function populateFavoritesDropdown() {
+    const options = ['<option value=""></option>'];
+    for (const fav of favorites) {
+      const [prov, model] = fav.split(':');
+      options.push(`<option value="${fav}">${prov}:${model}</option>`);
+    }
+    favoriteModelEl.innerHTML = options.join('');
   }
 
-  providerEl.addEventListener('change', populateModels);
+  favoriteModelEl.addEventListener('change', () => {
+    const val = favoriteModelEl.value;
+    if (!val) return;
+    const [prov, model] = val.split(':');
+    if (prov && model) {
+      providerEl.value = prov;
+      populateModels();
+      modelEl.value = model;
+      updateFavoriteStar();
+    }
+  });
+
+  function updateFavoriteStar() {
+    const key = `${providerEl.value}:${modelEl.value}`;
+    if (favorites.includes(key)) {
+      toggleFavoriteBtn.textContent = '★';
+      toggleFavoriteBtn.classList.add('text-yellow-400');
+    } else {
+      toggleFavoriteBtn.textContent = '☆';
+      toggleFavoriteBtn.classList.remove('text-yellow-400');
+    }
+  }
+
+  toggleFavoriteBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const provider = providerEl.value;
+    const model = modelEl.value;
+    const key = `${provider}:${model}`;
+    try {
+      if (favorites.includes(key)) {
+        await fetch(`/api/favorites?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`, { method: 'DELETE' });
+        favorites = favorites.filter(f => f !== key);
+      } else {
+        await fetch('/api/favorites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }) });
+        favorites.push(key);
+      }
+      populateFavoritesDropdown();
+      updateFavoriteStar();
+    } catch (err) {
+      showToast('Favorite update failed');
+    }
+  });
+
+  modelEl.addEventListener('change', () => {
+    updateFavoriteStar();
+  });
+
+  providerEl.addEventListener('change', () => {
+    populateModels();
+  });
+  // remove old listener already replaced
 
   async function loadHistory() {
     try {
-      const res = await fetch('/api/chats');
+      // Avoid stale cached responses (some browsers may cache GET /api/chats)
+      const res = await fetch('/api/chats', { cache: 'no-store' });
       const data = await res.json();
       const chats = data.chats || [];
       historyEl.innerHTML = '';
@@ -290,6 +376,9 @@ Omni Chat
                 // Handle metadata (chat_id, title, etc.)
                 if (data.chat_id) currentChatId = data.chat_id;
                 if (data.title && !title) chatTitleEl.value = data.title;
+                // Ensure sidebar history reflects newly created chat immediately
+                // (previously only refreshed after full streaming completion)
+                loadHistory();
               } else if (data.type === 'token') {
                 console.log('[FRONTEND] Received token:', JSON.stringify(data.token));
                 // Start streaming: hide loading, show streaming content and typing indicator
@@ -381,13 +470,20 @@ Omni Chat
   });
 
   deleteChatEl.addEventListener('click', async () => {
-    if (!currentChatId) return;
+    // If no persisted chat yet, just soft clear the UI
+    if (!currentChatId) {
+      startNewChat();
+      return;
+    }
+    const deletingId = currentChatId;
     try {
-      const res = await fetch(`/api/chats/${currentChatId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/chats/${deletingId}`, { method: 'DELETE' });
       if (res.ok) {
-        // After deletion, load remaining chats and switch to the next one if available
+        // Reset currentChatId immediately to avoid race conditions with stale value
+        currentChatId = null;
+        // Refetch remaining chats with no-store to prevent caching
         try {
-          const listRes = await fetch('/api/chats');
+          const listRes = await fetch('/api/chats', { cache: 'no-store' });
           if (listRes.ok) {
             const payload = await listRes.json();
             const chats = payload.chats || [];
@@ -403,8 +499,13 @@ Omni Chat
           startNewChat();
         }
         loadHistory();
+        showToast('Chat deleted');
+      } else {
+        showToast('Delete failed');
       }
-    } catch (_) {}
+    } catch (e) {
+      showToast('Delete error');
+    }
   });
 
   chatTitleEl.addEventListener('change', async () => {

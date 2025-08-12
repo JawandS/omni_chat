@@ -8,7 +8,7 @@ from flask import current_app, g, Flask
 
 def init_app(app: Flask) -> None:
     """Configure database path and teardown for the Flask app.
-    
+
     Args:
         app: The Flask application instance to configure.
     """
@@ -17,9 +17,11 @@ def init_app(app: Flask) -> None:
     app.config.setdefault("DATABASE", os.path.join(app.instance_path, "omni_chat.db"))
 
     @app.teardown_appcontext
-    def close_db(exception: Optional[BaseException]) -> None:  # noqa: ARG001 - Flask signature
+    def close_db(
+        exception: Optional[BaseException],
+    ) -> None:  # noqa: ARG001 - Flask signature
         """Close database connection if it exists.
-        
+
         Args:
             exception: Any exception that occurred during request processing.
         """
@@ -30,12 +32,14 @@ def init_app(app: Flask) -> None:
 
 def get_db() -> sqlite3.Connection:
     """Get sqlite connection stored on Flask's `g` object.
-    
+
     Returns:
         A sqlite3.Connection instance with row factory configured.
     """
     if "db" not in g:
-        conn = sqlite3.connect(current_app.config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES)
+        conn = sqlite3.connect(
+            current_app.config["DATABASE"], detect_types=sqlite3.PARSE_DECLTYPES
+        )
         conn.row_factory = sqlite3.Row
         # Ensure foreign key constraints are enforced (for ON DELETE CASCADE)
         conn.execute("PRAGMA foreign_keys = ON")
@@ -82,7 +86,7 @@ def _ensure_message_columns_exist() -> None:
             columns_to_add.append("ALTER TABLE messages ADD COLUMN provider TEXT")
         if "model" not in cols:
             columns_to_add.append("ALTER TABLE messages ADD COLUMN model TEXT")
-        
+
         for stmt in columns_to_add:
             db.execute(stmt)
         if columns_to_add:
@@ -102,25 +106,27 @@ def commit() -> None:
 
 def _get_timestamp(now: Optional[str] = None) -> str:
     """Get current timestamp or provided timestamp.
-    
+
     Args:
         now: Optional timestamp string. If None, current UTC time is used.
-        
+
     Returns:
         ISO formatted timestamp string.
     """
     return now or datetime.now(UTC).isoformat()
 
 
-def create_chat(title: str, provider: str, model: str, now: Optional[str] = None) -> int:
+def create_chat(
+    title: str, provider: str, model: str, now: Optional[str] = None
+) -> int:
     """Create a new chat record.
-    
+
     Args:
         title: The chat title.
         provider: The AI provider name.
         model: The AI model name.
         now: Optional timestamp. If None, current time is used.
-        
+
     Returns:
         The ID of the created chat.
     """
@@ -130,12 +136,20 @@ def create_chat(title: str, provider: str, model: str, now: Optional[str] = None
         "INSERT INTO chats (title, provider, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (title, provider, model, ts, ts),
     )
-    return int(cur.lastrowid)
+    last_id = cur.lastrowid  # Optional[int] per typeshed
+    if not isinstance(last_id, int):  # pragma: no cover - defensive
+        raise RuntimeError("SQLite cursor did not return an integer lastrowid")
+    return last_id
 
 
-def update_chat_meta(chat_id: int, provider: Optional[str], model: Optional[str], now: Optional[str] = None) -> None:
+def update_chat_meta(
+    chat_id: int,
+    provider: Optional[str],
+    model: Optional[str],
+    now: Optional[str] = None,
+) -> None:
     """Update chat provider and model metadata.
-    
+
     Args:
         chat_id: The chat ID to update.
         provider: New provider name.
@@ -149,10 +163,16 @@ def update_chat_meta(chat_id: int, provider: Optional[str], model: Optional[str]
     )
 
 
-def update_chat(chat_id: int, *, title: Optional[str] = None, provider: Optional[str] = None, 
-                model: Optional[str] = None, now: Optional[str] = None) -> None:
+def update_chat(
+    chat_id: int,
+    *,
+    title: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    now: Optional[str] = None,
+) -> None:
     """Update chat fields selectively.
-    
+
     Args:
         chat_id: The chat ID to update.
         title: New title (optional).
@@ -162,9 +182,12 @@ def update_chat(chat_id: int, *, title: Optional[str] = None, provider: Optional
     """
     db = get_db()
     ts = _get_timestamp(now)
-    
+
     if title:
-        db.execute("UPDATE chats SET title = ?, updated_at = ? WHERE id = ?", (title, ts, chat_id))
+        db.execute(
+            "UPDATE chats SET title = ?, updated_at = ? WHERE id = ?",
+            (title, ts, chat_id),
+        )
     if provider is not None or model is not None:
         db.execute(
             "UPDATE chats SET provider = COALESCE(?, provider), model = COALESCE(?, model), updated_at = ? WHERE id = ?",
@@ -172,10 +195,16 @@ def update_chat(chat_id: int, *, title: Optional[str] = None, provider: Optional
         )
 
 
-def insert_message(chat_id: int, role: str, content: str, now: Optional[str] = None,
-                   provider: Optional[str] = None, model: Optional[str] = None) -> None:
+def insert_message(
+    chat_id: int,
+    role: str,
+    content: str,
+    now: Optional[str] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> None:
     """Insert a new message into a chat.
-    
+
     Args:
         chat_id: The chat ID to add the message to.
         role: The message role ('user' or 'assistant').
@@ -183,13 +212,13 @@ def insert_message(chat_id: int, role: str, content: str, now: Optional[str] = N
         now: Optional timestamp. If None, current time is used.
         provider: Optional provider name for the message.
         model: Optional model name for the message.
-        
+
     Raises:
         ValueError: If role is not 'user' or 'assistant'.
     """
-    if role not in ('user', 'assistant'):
+    if role not in ("user", "assistant"):
         raise ValueError(f"Invalid role: {role}. Must be 'user' or 'assistant'")
-    
+
     ts = _get_timestamp(now)
     get_db().execute(
         "INSERT INTO messages (chat_id, role, content, provider, model, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -199,7 +228,7 @@ def insert_message(chat_id: int, role: str, content: str, now: Optional[str] = N
 
 def touch_chat(chat_id: int, now: Optional[str] = None) -> None:
     """Update a chat's last updated timestamp.
-    
+
     Args:
         chat_id: The chat ID to update.
         now: Optional timestamp. If None, current time is used.
@@ -210,48 +239,60 @@ def touch_chat(chat_id: int, now: Optional[str] = None) -> None:
 
 def list_chats() -> list[sqlite3.Row]:
     """Get all chats ordered by most recent update.
-    
+
     Returns:
         List of chat records with id, title, provider, model, and updated_at fields.
     """
-    return get_db().execute(
-        "SELECT id, title, provider, model, updated_at FROM chats ORDER BY datetime(updated_at) DESC"
-    ).fetchall()
+    return (
+        get_db()
+        .execute(
+            "SELECT id, title, provider, model, updated_at FROM chats ORDER BY datetime(updated_at) DESC"
+        )
+        .fetchall()
+    )
 
 
 def get_chat(chat_id: int) -> Optional[sqlite3.Row]:
     """Get a specific chat by ID.
-    
+
     Args:
         chat_id: The chat ID to retrieve.
-        
+
     Returns:
         Chat record or None if not found.
     """
-    return get_db().execute(
-        "SELECT id, title, provider, model, created_at, updated_at FROM chats WHERE id = ?",
-        (chat_id,),
-    ).fetchone()
+    return (
+        get_db()
+        .execute(
+            "SELECT id, title, provider, model, created_at, updated_at FROM chats WHERE id = ?",
+            (chat_id,),
+        )
+        .fetchone()
+    )
 
 
 def get_messages(chat_id: int) -> list[sqlite3.Row]:
     """Get all messages for a specific chat.
-    
+
     Args:
         chat_id: The chat ID to get messages for.
-        
+
     Returns:
         List of message records ordered by creation time.
     """
-    return get_db().execute(
-        "SELECT role, content, provider, model, created_at FROM messages WHERE chat_id = ? ORDER BY id ASC",
-        (chat_id,),
-    ).fetchall()
+    return (
+        get_db()
+        .execute(
+            "SELECT role, content, provider, model, created_at FROM messages WHERE chat_id = ? ORDER BY id ASC",
+            (chat_id,),
+        )
+        .fetchall()
+    )
 
 
 def delete_chat(chat_id: int) -> None:
     """Delete a chat and its messages.
-    
+
     Args:
         chat_id: The chat ID to delete.
     """

@@ -108,6 +108,9 @@ def _openai_call_stream(model: str, history: List[Dict[str, str]], message: str)
     
     Yields content tokens as they arrive, or None on failure.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     key = _get_openai_key()
     if not key or key.startswith("PUT_"):
         return
@@ -119,20 +122,26 @@ def _openai_call_stream(model: str, history: List[Dict[str, str]], message: str)
     
     if _openai_is_reasoning_model(model):
         # Reasoning models don't support streaming currently, fall back to non-streaming
+        logger.info(f"[OPENAI] Using reasoning model {model}, falling back to non-streaming")
         content = _openai_call(model, history, message)
         if content:
+            logger.info(f"[OPENAI] Got full content from reasoning model: {len(content)} chars")
             yield content
         return
     else:
+        logger.info(f"[OPENAI] Starting streaming for model {model}")
         stream = client.chat.completions.create(
             model=model,
             messages=messages,
             stream=True,
         )
+        token_count = 0
         for chunk in stream:
             if chunk.choices:
                 delta = chunk.choices[0].delta
                 if hasattr(delta, 'content') and delta.content:
+                    token_count += 1
+                    logger.info(f"[OPENAI] Token {token_count}: '{delta.content}'")
                     yield delta.content
 
 
@@ -259,27 +268,38 @@ def generate_reply_stream(provider: str, model: str, message: str, history: Opti
     
     Yields StreamChunk objects with tokens, errors, or warnings.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     plow = provider.lower()
     hist = history or []
+    
+    logger.info(f"[STREAM] Starting stream for provider: {provider}, model: {model}")
     
     if plow == "openai":
         try:
             k = _get_openai_key()
             missing = (not k or k.startswith("PUT_") or OpenAI is None)
             if missing:
+                logger.info("[STREAM] OpenAI API key missing")
                 yield StreamChunk(error="OpenAI API key not set", missing_key_for="openai")
                 return
             
             had_content = False
+            token_count = 0
             for token in _openai_call_stream(model, hist, message):
                 if token:
                     had_content = True
+                    token_count += 1
+                    logger.info(f"[STREAM] Yielding token {token_count}: '{token}'")
                     yield StreamChunk(token=token)
             
             if not had_content:
+                logger.info("[STREAM] No content received from OpenAI")
                 yield StreamChunk(error="OpenAI returned no content")
                 
         except Exception as e:
+            logger.error(f"[STREAM] OpenAI error: {e}")
             yield StreamChunk(error=f"OpenAI error: {e.__class__.__name__}: {e}")
     
     elif plow == "gemini":
@@ -291,15 +311,19 @@ def generate_reply_stream(provider: str, model: str, message: str, history: Opti
                 return
             
             had_content = False
+            token_count = 0
             for token in _gemini_call_stream(model, hist, message):
                 if token:
                     had_content = True
+                    token_count += 1
+                    logger.info(f"[STREAM] Yielding Gemini token {token_count}: '{token}'")
                     yield StreamChunk(token=token)
             
             if not had_content:
                 yield StreamChunk(error="Gemini returned no content")
                 
         except Exception as e:
+            logger.error(f"[STREAM] Gemini error: {e}")
             yield StreamChunk(error=f"Gemini error: {e.__class__.__name__}: {e}")
     
     elif plow in ("", None):  # type: ignore[comparison-overlap]

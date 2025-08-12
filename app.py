@@ -2,6 +2,7 @@ from datetime import datetime, UTC
 from flask import Flask, render_template, request, jsonify, Response, stream_template
 import os
 import json
+import logging
 from typing import Optional, Generator
 from dotenv import load_dotenv, set_key, unset_key, dotenv_values
 
@@ -26,6 +27,10 @@ def create_app() -> Flask:
     """Application factory to create and configure the Flask app."""
     app = Flask(__name__)
 
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+
     # Configure DB integration (path, teardown)
     db_init_app(app)
 
@@ -49,6 +54,8 @@ def create_app() -> Flask:
         try:
             data = request.get_json(silent=True) or {}
             message = (data.get("message") or "").strip()
+            logger.info(f"[NON-STREAMING] Received message: {message[:50]}...")
+            
             if not message:
                 return jsonify({"error": "message is required"}), 400
 
@@ -57,6 +64,8 @@ def create_app() -> Flask:
             title = (data.get("title") or "").strip()
             chat_id = data.get("chat_id")
 
+            logger.info(f"[NON-STREAMING] Provider: {provider}, Model: {model}, Chat ID: {chat_id}")
+
             now = datetime.now(UTC).isoformat()
 
             # Create chat if needed
@@ -64,12 +73,14 @@ def create_app() -> Flask:
                 if not title:
                     title = (message[:48] + "…") if len(message) > 49 else message or "New chat"
                 chat_id = create_chat(title, provider, model, now)
+                logger.info(f"[NON-STREAMING] Created new chat with ID: {chat_id}")
             else:
                 # Update provider/model if changed
                 update_chat_meta(chat_id, provider, model, now)
 
             # Save user message (store provider/model snapshot on message for auditability)
             insert_message(chat_id, 'user', message, now, provider=provider, model=model)
+            logger.info(f"[NON-STREAMING] Saved user message to chat {chat_id}")
 
             # Generate and save assistant reply (OpenAI/Gemini if configured). Pass history along.
             history = data.get("history") or []
@@ -79,6 +90,7 @@ def create_app() -> Flask:
                 return jsonify({"error": str(e)}), 400
             reply = reply_obj.reply
             insert_message(chat_id, 'assistant', reply, now, provider=provider, model=model)
+            logger.info(f"[NON-STREAMING] Saved assistant reply to chat {chat_id}")
 
             # Touch chat updated_at
             touch_chat(chat_id, now)
@@ -105,6 +117,8 @@ def create_app() -> Flask:
         try:
             data = request.get_json(silent=True) or {}
             message = (data.get("message") or "").strip()
+            logger.info(f"[STREAMING] Received message: {message[:50]}...")
+            
             if not message:
                 return jsonify({"error": "message is required"}), 400
 
@@ -112,6 +126,8 @@ def create_app() -> Flask:
             model = (data.get("model") or "unknown").strip()
             title = (data.get("title") or "").strip()
             chat_id = data.get("chat_id")
+
+            logger.info(f"[STREAMING] Provider: {provider}, Model: {model}, Chat ID: {chat_id}")
 
             now = datetime.now(UTC).isoformat()
 
@@ -121,6 +137,7 @@ def create_app() -> Flask:
                     title = (message[:48] + "…") if len(message) > 49 else message or "New chat"
                 chat_id = create_chat(title, provider, model, now)
                 commit()  # Commit the chat creation immediately
+                logger.info(f"[STREAMING] Created new chat with ID: {chat_id}")
             else:
                 # Update provider/model if changed
                 update_chat_meta(chat_id, provider, model, now)
@@ -129,6 +146,7 @@ def create_app() -> Flask:
             # Save user message and commit
             insert_message(chat_id, 'user', message, now, provider=provider, model=model)
             commit()  # Commit the user message
+            logger.info(f"[STREAMING] Saved user message to chat {chat_id}")
 
             def generate() -> Generator[str, None, None]:
                 """Generator function for streaming response."""
@@ -158,11 +176,13 @@ def create_app() -> Flask:
                             insert_message(chat_id, 'assistant', full_reply, now, provider=provider, model=model)
                             touch_chat(chat_id, now)
                             commit()
+                            logger.info(f"[STREAMING] Saved assistant reply to chat {chat_id}")
                         
                         # Send completion signal
                         yield f"data: {json.dumps({'type': 'done'})}\n\n"
                         
                     except Exception as e:
+                        logger.error(f"[STREAMING] Error in generator: {str(e)}")
                         yield f"data: {json.dumps({'type': 'error', 'error': f'Stream error: {str(e)}'})}\n\n"
 
             return Response(generate(), mimetype='text/event-stream', headers={
@@ -170,7 +190,8 @@ def create_app() -> Flask:
                 'Connection': 'keep-alive',
                 'Access-Control-Allow-Origin': '*',
             })
-        except Exception:  # pragma: no cover - keep placeholder simple
+        except Exception as e:  # pragma: no cover - keep placeholder simple
+            logger.error(f"[STREAMING] Error in endpoint: {str(e)}")
             return jsonify({"error": "unexpected error"}), 500
 
     @app.get("/api/chats")

@@ -34,6 +34,17 @@
     select { color: #e5e7eb; background-color: rgba(255,255,255,0.08); }
     select:focus { outline: none; }
     select option { color: #0f172a; background-color: #ffffff; }
+    
+    /* Typing indicator animation */
+    #typing-indicator {
+      animation: blink 1s infinite;
+      color: #60a5fa;
+    }
+    
+    @keyframes blink {
+      0%, 50% { opacity: 1; }
+      51%, 100% { opacity: 0; }
+    }
   </style>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
 </head>

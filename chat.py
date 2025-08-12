@@ -411,14 +411,3 @@ def generate_reply_stream(provider: str, model: str, message: str, history: Opti
     
     else:
         yield StreamChunk(error=f"unknown provider: {provider}")
-
-
-# Legacy functions for backward compatibility with tests
-def _get_openai_key() -> str:
-    """Legacy function for backward compatibility."""
-    return _get_api_key("openai")
-
-
-def _get_gemini_key() -> str:
-    """Legacy function for backward compatibility."""
-    return _get_api_key("gemini")

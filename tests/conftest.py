@@ -55,10 +55,6 @@ def _force_test_isolation(monkeypatch, tmp_path):
     
     monkeypatch.setattr(chat_mod, "_get_api_key", mock_get_api_key)
     
-    # Also patch the legacy functions for backward compatibility
-    monkeypatch.setattr(chat_mod, "_get_openai_key", lambda: "PUT_OPENAI_API_KEY_HERE")
-    monkeypatch.setattr(chat_mod, "_get_gemini_key", lambda: "PUT_GEMINI_API_KEY_HERE")
-    
     # Disable the actual client libraries to prevent any real API calls
     try:
         monkeypatch.setattr(chat_mod, "OpenAI", None, raising=False)

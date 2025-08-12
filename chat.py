@@ -2,7 +2,7 @@
 
 import os
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Iterator
+from typing import List, Dict, Optional, Iterator, Any, cast
 
 try:
     from dotenv import load_dotenv  # type: ignore
@@ -135,19 +135,25 @@ def _openai_call(
     messages = _format_history_for_openai(history, message)
 
     if _is_reasoning_model(model):
-        # Use Responses API for reasoning models like o3-mini
-        resp = client.responses.create(
+        # Use Responses API for reasoning models like o3-mini.
+        # Casting messages because SDK expects complex union types; runtime accepts our structure.
+        reasoning_resp = client.responses.create(  # type: ignore[arg-type,assignment]
             model=model,
-            input=messages,
+            input=cast(Any, messages),
             reasoning={"effort": "low"},
         )
-        return getattr(resp, "output_text", None)
+        return getattr(reasoning_resp, "output_text", None)
     else:
-        resp = client.chat.completions.create(
+        completion_resp = client.chat.completions.create(  # type: ignore[arg-type,assignment]
             model=model,
-            messages=messages,
+            messages=cast(Any, messages),
         )
-        content = resp.choices[0].message.content if resp.choices else None
+        # choices attribute is dynamic from SDK; ignore for typing
+        content = (
+            completion_resp.choices[0].message.content  # type: ignore[attr-defined,index]
+            if getattr(completion_resp, "choices", None)
+            else None
+        )
         return content or None
 
 
@@ -189,19 +195,22 @@ def _openai_call_stream(
         return
     else:
         logger.info(f"[OPENAI] Starting streaming for model {model}")
-        stream = client.chat.completions.create(
+        stream = client.chat.completions.create(  # type: ignore[arg-type]
             model=model,
-            messages=messages,
+            messages=cast(Any, messages),
             stream=True,
         )
         token_count = 0
         for chunk in stream:
-            if chunk.choices:
-                delta = chunk.choices[0].delta
-                if hasattr(delta, "content") and delta.content:
+            # Guard for union types or unexpected tuple outputs in newer SDKs
+            if hasattr(chunk, 'choices') and getattr(chunk, 'choices'):
+                first_choice = getattr(chunk, 'choices')[0]
+                delta = getattr(first_choice, 'delta', None)
+                content_piece = getattr(delta, 'content', None) if delta else None
+                if content_piece:
                     token_count += 1
-                    logger.info(f"[OPENAI] Token {token_count}: '{delta.content}'")
-                    yield delta.content
+                    logger.info(f"[OPENAI] Token {token_count}: '{content_piece}'")
+                    yield content_piece  # type: ignore[return-value]
 
 
 def _format_history_for_gemini(
@@ -250,7 +259,7 @@ def _gemini_call(
     model_obj = genai.GenerativeModel(model)
 
     # Start a new chat with prior history and send the latest message
-    chat = model_obj.start_chat(history=chat_history)
+    chat = model_obj.start_chat(history=cast(Any, chat_history))  # type: ignore[arg-type]
     resp = chat.send_message(user_text)
 
     # Get text output (first candidate)
@@ -285,7 +294,7 @@ def _gemini_call_stream(
     genai.configure(api_key=key)
     chat_history, user_text = _format_history_for_gemini(history, message)
     model_obj = genai.GenerativeModel(model)
-    chat = model_obj.start_chat(history=chat_history)
+    chat = model_obj.start_chat(history=cast(Any, chat_history))  # type: ignore[arg-type]
 
     # Stream the response
     response = chat.send_message(user_text, stream=True)

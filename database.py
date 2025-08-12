@@ -136,7 +136,10 @@ def create_chat(
         "INSERT INTO chats (title, provider, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (title, provider, model, ts, ts),
     )
-    return int(cur.lastrowid)
+    last_id = cur.lastrowid  # Optional[int] per typeshed
+    if not isinstance(last_id, int):  # pragma: no cover - defensive
+        raise RuntimeError("SQLite cursor did not return an integer lastrowid")
+    return last_id
 
 
 def update_chat_meta(

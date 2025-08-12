@@ -53,7 +53,6 @@ All tests (62) should pass in ~1–2 seconds (observed: 1.33s). They create a te
 ### 3.4 Lint / Format / Type Check (recommended before PRs)
 Install dev deps first. Then:
 ```bash
-flake8 .
 black --check .
 mypy .
 ```

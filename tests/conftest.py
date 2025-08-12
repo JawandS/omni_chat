@@ -16,8 +16,13 @@ def client(tmp_path):
     """Flask test client backed by a fresh temp SQLite database per test."""
     app = create_app()
     app.config.update(TESTING=True)
-    # Point to a temp DB file and initialize tables
+    
+    # Point to a temp DB file and initialize tables (isolate from prod DB)
     app.config["DATABASE"] = str(tmp_path / "test.db")
+    
+    # Point to a temp .env file (isolate from prod .env file)
+    app.config["ENV_PATH"] = str(tmp_path / ".env.test")
+    
     with app.app_context():
         init_db()
     with app.test_client() as c:
@@ -25,24 +30,36 @@ def client(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _force_echo_backend(monkeypatch):
-    """Ensure tests never hit the real OpenAI/Gemini APIs.
+def _force_test_isolation(monkeypatch, tmp_path):
+    """Ensure complete test isolation from production resources.
 
-    This isolates tests from external services and keeps assertions stable,
-    even if API keys are present in the environment.
+    This isolates tests from external services, production database,
+    production .env files, and keeps assertions stable.
     """
     import chat as chat_mod  # import here to ensure module is loaded
     import os
     
-    # Clear environment variables for tests
-    for key in ["OPENAI_API_KEY", "GEMINI_API_KEY"]:
+    # Clear all relevant environment variables for tests
+    env_vars_to_clear = [
+        "OPENAI_API_KEY", 
+        "GEMINI_API_KEY",
+        "DATABASE",  # In case it's set in environment
+    ]
+    for key in env_vars_to_clear:
         monkeypatch.delenv(key, raising=False)
     
-    # Force fallback path by monkeypatching the key getter functions
+    # Force fallback path by monkeypatching the new unified API key getter
+    def mock_get_api_key(provider):
+        """Mock API key getter that never returns real keys."""
+        return "PUT_API_KEY_HERE" if provider.lower() in ["openai", "gemini"] else ""
+    
+    monkeypatch.setattr(chat_mod, "_get_api_key", mock_get_api_key)
+    
+    # Also patch the legacy functions for backward compatibility
     monkeypatch.setattr(chat_mod, "_get_openai_key", lambda: "PUT_OPENAI_API_KEY_HERE")
     monkeypatch.setattr(chat_mod, "_get_gemini_key", lambda: "PUT_GEMINI_API_KEY_HERE")
     
-    # Disable the actual client libraries
+    # Disable the actual client libraries to prevent any real API calls
     try:
         monkeypatch.setattr(chat_mod, "OpenAI", None, raising=False)
     except Exception:
@@ -52,3 +69,14 @@ def _force_echo_backend(monkeypatch):
         monkeypatch.setattr(chat_mod, "genai", None, raising=False)  
     except Exception:
         pass
+    
+    # Set a test-specific working directory if needed
+    # This ensures any relative path operations don't affect production files
+    original_cwd = os.getcwd()
+    test_work_dir = tmp_path / "work"
+    test_work_dir.mkdir()
+    os.chdir(str(test_work_dir))
+    
+    # Restore original working directory after test
+    yield
+    os.chdir(original_cwd)

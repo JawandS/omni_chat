@@ -1,58 +1,89 @@
-from dataclasses import dataclass
-from typing import List, Dict, Optional
+"""Chat module for handling AI provider API calls and responses."""
+
 import os
+from dataclasses import dataclass
+from typing import List, Dict, Optional, Iterator
+
 try:
     from dotenv import load_dotenv  # type: ignore
-except Exception:  # pragma: no cover - optional dependency in tests
+except ImportError:  # pragma: no cover - optional dependency in tests
     load_dotenv = None  # type: ignore
 
-# Load .env early so os.getenv picks up OPENAI_API_KEY
+# Load .env early so os.getenv picks up API keys
 if load_dotenv is not None:
     try:
         load_dotenv()
     except Exception:
         pass
 
-# Hardcoded placeholders; actual values are read from environment at call time.
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "PUT_OPENAI_API_KEY_HERE")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "PUT_GEMINI_API_KEY_HERE")
-
-def _get_openai_key() -> str:
-    return os.getenv("OPENAI_API_KEY", "")
-
-def _get_gemini_key() -> str:
-    return os.getenv("GEMINI_API_KEY", "")
-
 try:
     from openai import OpenAI  # type: ignore
-except Exception:  # pragma: no cover - optional dependency in tests
+except ImportError:  # pragma: no cover - optional dependency in tests
     OpenAI = None  # type: ignore
 
 try:
     import google.generativeai as genai  # type: ignore
-except Exception:  # pragma: no cover - optional dependency in tests
+except ImportError:  # pragma: no cover - optional dependency in tests
     genai = None  # type: ignore
 
 
 @dataclass
 class ChatReply:
+    """Response from a chat generation call.
+    
+    Attributes:
+        reply: The generated response text.
+        warning: Optional warning message.
+        error: Optional error message.
+        missing_key_for: Optional provider name if API key is missing.
+    """
     reply: str
     warning: Optional[str] = None
     error: Optional[str] = None
     missing_key_for: Optional[str] = None
 
+
 @dataclass
 class StreamChunk:
+    """A chunk of streamed response.
+    
+    Attributes:
+        token: Optional text token from the stream.
+        warning: Optional warning message.
+        error: Optional error message.
+        missing_key_for: Optional provider name if API key is missing.
+    """
     token: Optional[str] = None
     warning: Optional[str] = None
     error: Optional[str] = None
     missing_key_for: Optional[str] = None
 
-def _format_history_for_openai(history: List[Dict[str, str]], latest_message: str) -> List[Dict[str, str]]:
-    """Convert our history list to OpenAI Chat Completions format.
 
-    history: [{"role": "user"|"assistant", "content": str}, ...]
-    latest_message: the new user message to append at the end as 'user'.
+def _get_api_key(provider: str) -> str:
+    """Get API key for the specified provider.
+    
+    Args:
+        provider: Provider name ('openai' or 'gemini').
+        
+    Returns:
+        API key from environment or empty string if not found.
+    """
+    key_mapping = {
+        "openai": "OPENAI_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+    }
+    env_var = key_mapping.get(provider.lower(), "")
+    return os.getenv(env_var, "")
+
+def _format_history_for_openai(history: List[Dict[str, str]], latest_message: str) -> List[Dict[str, str]]:
+    """Convert history list to OpenAI Chat Completions format.
+
+    Args:
+        history: List of message dictionaries with 'role' and 'content' keys.
+        latest_message: The new user message to append at the end as 'user'.
+        
+    Returns:
+        Formatted message list for OpenAI API.
     """
     msgs: List[Dict[str, str]] = []
     for m in history or []:
@@ -66,34 +97,44 @@ def _format_history_for_openai(history: List[Dict[str, str]], latest_message: st
     return msgs
 
 
-def _openai_is_reasoning_model(model: str) -> bool:
-    m = (model or "").lower()
-    # Treat o3 family as reasoning models using the Responses API
-    return m.startswith("o3")
+def _is_reasoning_model(model: str) -> bool:
+    """Check if the model is a reasoning model (o3 family) that uses Responses API.
+    
+    Args:
+        model: The model name to check.
+        
+    Returns:
+        True if the model is a reasoning model.
+    """
+    return (model or "").lower().startswith("o3")
 
 
 def _openai_call(model: str, history: List[Dict[str, str]], message: str) -> Optional[str]:
-    """Call OpenAI Chat Completions API with formatted history.
+    """Call OpenAI API with formatted history.
 
-    Returns the reply string or None on failure.
+    Args:
+        model: The OpenAI model name.
+        history: Previous message history.
+        message: The current user message.
+        
+    Returns:
+        The reply string or None on failure.
     """
-    key = _get_openai_key()
-    if not key or key.startswith("PUT_"):
+    key = _get_api_key("openai")
+    if not key or key.startswith("PUT_") or OpenAI is None:
         return None
-    if OpenAI is None:
-        return None
+        
     client = OpenAI(api_key=key)
     messages = _format_history_for_openai(history, message)
-    if _openai_is_reasoning_model(model):
+    
+    if _is_reasoning_model(model):
         # Use Responses API for reasoning models like o3-mini
         resp = client.responses.create(
             model=model,
             input=messages,
             reasoning={"effort": "low"},
         )
-        # The Responses API returns output_text
-        content = getattr(resp, "output_text", None)
-        return content or None
+        return getattr(resp, "output_text", None)
     else:
         resp = client.chat.completions.create(
             model=model,
@@ -103,24 +144,28 @@ def _openai_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
         return content or None
 
 
-def _openai_call_stream(model: str, history: List[Dict[str, str]], message: str):
-    """Call OpenAI Chat Completions API with streaming.
+def _openai_call_stream(model: str, history: List[Dict[str, str]], message: str) -> Iterator[str]:
+    """Call OpenAI API with streaming.
     
-    Yields content tokens as they arrive, or None on failure.
+    Args:
+        model: The OpenAI model name.
+        history: Previous message history.
+        message: The current user message.
+        
+    Yields:
+        Content tokens as they arrive.
     """
     import logging
     logger = logging.getLogger(__name__)
     
-    key = _get_openai_key()
-    if not key or key.startswith("PUT_"):
-        return
-    if OpenAI is None:
+    key = _get_api_key("openai")
+    if not key or key.startswith("PUT_") or OpenAI is None:
         return
     
     client = OpenAI(api_key=key)
     messages = _format_history_for_openai(history, message)
     
-    if _openai_is_reasoning_model(model):
+    if _is_reasoning_model(model):
         # Reasoning models don't support streaming currently, fall back to non-streaming
         logger.info(f"[OPENAI] Using reasoning model {model}, falling back to non-streaming")
         content = _openai_call(model, history, message)
@@ -145,12 +190,16 @@ def _openai_call_stream(model: str, history: List[Dict[str, str]], message: str)
                     yield delta.content
 
 
-def _format_history_for_gemini(history: List[Dict[str, str]], latest_message: str):
+def _format_history_for_gemini(history: List[Dict[str, str]], latest_message: str) -> tuple[list[Dict], str]:
     """Convert history to Gemini chat history and user input.
 
-    Returns (history_list, user_text) where history_list is a list of dicts with
-    'role' ('user'|'model') and 'parts' (list of strings), and user_text is the
-    current user message to send.
+    Args:
+        history: Previous message history.
+        latest_message: The current user message.
+        
+    Returns:
+        Tuple of (history_list, user_text) where history_list contains dicts with
+        'role' ('user'|'model') and 'parts' (list of strings).
     """
     mapped = []
     for m in history or []:
@@ -164,22 +213,28 @@ def _format_history_for_gemini(history: List[Dict[str, str]], latest_message: st
 
 
 def _gemini_call(model: str, history: List[Dict[str, str]], message: str) -> Optional[str]:
-    """Call Google Gemini with formatted history.
+    """Call Google Gemini API with formatted history.
 
-    Returns reply content string or None on failure.
+    Args:
+        model: The Gemini model name.
+        history: Previous message history.
+        message: The current user message.
+        
+    Returns:
+        Reply content string or None on failure.
     """
-    key = _get_gemini_key()
-    if not key or key.startswith("PUT_"):
+    key = _get_api_key("gemini")
+    if not key or key.startswith("PUT_") or genai is None:
         return None
-    if genai is None:
-        return None
+        
     genai.configure(api_key=key)
     chat_history, user_text = _format_history_for_gemini(history, message)
-    # Gemini 2.5 and others are handled by the same client
     model_obj = genai.GenerativeModel(model)
+    
     # Start a new chat with prior history and send the latest message
     chat = model_obj.start_chat(history=chat_history)
     resp = chat.send_message(user_text)
+    
     # Get text output (first candidate)
     if hasattr(resp, "text") and resp.text:
         return str(resp.text)
@@ -192,15 +247,19 @@ def _gemini_call(model: str, history: List[Dict[str, str]], message: str) -> Opt
     return None
 
 
-def _gemini_call_stream(model: str, history: List[Dict[str, str]], message: str):
+def _gemini_call_stream(model: str, history: List[Dict[str, str]], message: str) -> Iterator[str]:
     """Call Google Gemini API with streaming.
     
-    Yields content tokens as they arrive, or None on failure.
+    Args:
+        model: The Gemini model name.
+        history: Previous message history.
+        message: The current user message.
+        
+    Yields:
+        Content tokens as they arrive.
     """
-    key = _get_gemini_key()
-    if not key or key.startswith("PUT_"):
-        return
-    if genai is None:
+    key = _get_api_key("gemini")
+    if not key or key.startswith("PUT_") or genai is None:
         return
     
     genai.configure(api_key=key)
@@ -223,71 +282,96 @@ def _gemini_call_stream(model: str, history: List[Dict[str, str]], message: str)
 
 
 def generate_reply(provider: str, model: str, message: str, history: Optional[List[Dict[str, str]]] = None) -> ChatReply:
-    """Chat generation logic with optional OpenAI backend.
+    """Generate a chat response using the specified provider.
 
-    - If provider == 'openai' and the OpenAI client/key is available, perform a real API call with full history.
-    - Otherwise, fall back to echo behavior for reliability in tests/offline.
+    Args:
+        provider: AI provider name ('openai' or 'gemini').
+        model: Model name to use.
+        message: The user message.
+        history: Optional previous message history.
+        
+    Returns:
+        ChatReply object with the response or error information.
+        
+    Raises:
+        ValueError: If provider is invalid or required parameters are missing.
     """
-    plow = provider.lower()
-    hist = history or []
-    if plow == "openai":
+    if not provider or not provider.strip():
+        raise ValueError("provider is required")
+    
+    if not model or not model.strip():
+        raise ValueError("model is required")
+    
+    provider_lower = provider.lower().strip()
+    history = history or []
+    
+    if provider_lower == "openai":
         try:
-            content = _openai_call(model, hist, message)
+            content = _openai_call(model, history, message)
             if content:
                 return ChatReply(reply=content)
-            # If no content, check for missing key/client
-            k = _get_openai_key()
-            missing = (not k or k.startswith("PUT_") or OpenAI is None)
-            if missing:
+            # Check for missing key/client
+            key = _get_api_key("openai")
+            if not key or key.startswith("PUT_") or OpenAI is None:
                 return ChatReply(reply="", error="OpenAI API key not set", missing_key_for="openai")
             return ChatReply(reply="", error="OpenAI returned no content")
         except Exception as e:
-            # Provide a detailed error for developers
             return ChatReply(reply="", error=f"OpenAI error: {e.__class__.__name__}: {e}")
-    elif plow == "gemini":
+            
+    elif provider_lower == "gemini":
         try:
-            content = _gemini_call(model, hist, message)
+            content = _gemini_call(model, history, message)
             if content:
                 return ChatReply(reply=content)
-            k = _get_gemini_key()
-            missing = (not k or k.startswith("PUT_") or genai is None)
-            if missing:
+            key = _get_api_key("gemini")
+            if not key or key.startswith("PUT_") or genai is None:
                 return ChatReply(reply="", error="Gemini API key not set", missing_key_for="gemini")
             return ChatReply(reply="", error="Gemini returned no content")
         except Exception as e:
             return ChatReply(reply="", error=f"Gemini error: {e.__class__.__name__}: {e}")
-    elif plow in ("", None):  # type: ignore[comparison-overlap]
-        raise ValueError("provider is required")
     else:
-        # Unrecognized provider -> signal error upstream
         raise ValueError(f"unknown provider: {provider}")
 
 
-def generate_reply_stream(provider: str, model: str, message: str, history: Optional[List[Dict[str, str]]] = None):
-    """Streaming chat generation logic.
+def generate_reply_stream(provider: str, model: str, message: str, history: Optional[List[Dict[str, str]]] = None) -> Iterator[StreamChunk]:
+    """Generate a streaming chat response using the specified provider.
     
-    Yields StreamChunk objects with tokens, errors, or warnings.
+    Args:
+        provider: AI provider name ('openai' or 'gemini').
+        model: Model name to use.
+        message: The user message.
+        history: Optional previous message history.
+        
+    Yields:
+        StreamChunk objects with tokens, errors, or warnings.
     """
     import logging
     logger = logging.getLogger(__name__)
     
-    plow = provider.lower()
-    hist = history or []
+    if not provider or not provider.strip():
+        yield StreamChunk(error="provider is required")
+        return
+        
+    if not model or not model.strip():
+        yield StreamChunk(error="model is required")
+        return
+    
+    provider_lower = provider.lower().strip()
+    history = history or []
     
     logger.info(f"[STREAM] Starting stream for provider: {provider}, model: {model}")
     
-    if plow == "openai":
+    if provider_lower == "openai":
         try:
-            k = _get_openai_key()
-            missing = (not k or k.startswith("PUT_") or OpenAI is None)
-            if missing:
+            key = _get_api_key("openai")
+            if not key or key.startswith("PUT_") or OpenAI is None:
                 logger.info("[STREAM] OpenAI API key missing")
                 yield StreamChunk(error="OpenAI API key not set", missing_key_for="openai")
                 return
             
             had_content = False
             token_count = 0
-            for token in _openai_call_stream(model, hist, message):
+            for token in _openai_call_stream(model, history, message):
                 if token:
                     had_content = True
                     token_count += 1
@@ -302,17 +386,16 @@ def generate_reply_stream(provider: str, model: str, message: str, history: Opti
             logger.error(f"[STREAM] OpenAI error: {e}")
             yield StreamChunk(error=f"OpenAI error: {e.__class__.__name__}: {e}")
     
-    elif plow == "gemini":
+    elif provider_lower == "gemini":
         try:
-            k = _get_gemini_key()
-            missing = (not k or k.startswith("PUT_") or genai is None)
-            if missing:
+            key = _get_api_key("gemini")
+            if not key or key.startswith("PUT_") or genai is None:
                 yield StreamChunk(error="Gemini API key not set", missing_key_for="gemini")
                 return
             
             had_content = False
             token_count = 0
-            for token in _gemini_call_stream(model, hist, message):
+            for token in _gemini_call_stream(model, history, message):
                 if token:
                     had_content = True
                     token_count += 1
@@ -326,7 +409,16 @@ def generate_reply_stream(provider: str, model: str, message: str, history: Opti
             logger.error(f"[STREAM] Gemini error: {e}")
             yield StreamChunk(error=f"Gemini error: {e.__class__.__name__}: {e}")
     
-    elif plow in ("", None):  # type: ignore[comparison-overlap]
-        yield StreamChunk(error="provider is required")
     else:
         yield StreamChunk(error=f"unknown provider: {provider}")
+
+
+# Legacy functions for backward compatibility with tests
+def _get_openai_key() -> str:
+    """Legacy function for backward compatibility."""
+    return _get_api_key("openai")
+
+
+def _get_gemini_key() -> str:
+    """Legacy function for backward compatibility."""
+    return _get_api_key("gemini")

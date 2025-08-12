@@ -3,11 +3,7 @@
 Trust this document first. Only search the codebase if something here is missing or demonstrably wrong.
 
 ## 1. Repository Summary
-Lightweight local web chat UI (Flask) that lets a user converse with AI models from different providers (currently OpenAI & Gemini) and switch model/provider mid‑conversation. Persists chats/messages in a local SQLite database (`instance/omni_chat.db`). Exposes REST + SSE streaming endpoints; frontend is plain HTML/JS templates + tailwind. Tests fully mock external API calls so the suite runs offline. Always run
-```bash
-source .venv/bin/activate/
-```
-before executing other code
+Lightweight local web chat UI (Flask) that lets a user converse with AI models from different providers (currently OpenAI & Gemini) and switch model/provider mid‑conversation. Persists chats/messages in a local SQLite database (`instance/omni_chat.db`). Exposes REST + SSE streaming endpoints; frontend is plain HTML/JS templates + tailwind. Tests fully mock external API calls so the suite runs offline. Always run `source .venv/bin/activate/` before executing other code
 
 ## 2. Tech Stack & Footprint
 - Language: Python 3.12 (README says 3.10+, tests pass on 3.12.3). Venv in `.venv`

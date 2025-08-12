@@ -517,7 +517,11 @@ def create_app() -> Flask:
 
     # Provider/model favorites & defaults ------------------------------------
 
-    PROVIDERS_JSON_PATH = os.path.join(app.root_path, "static", "providers.json")
+    # Allow tests (or other environments) to override the providers.json path
+    # via environment variable (must be decided before the helper closures capture it)
+    PROVIDERS_JSON_PATH = os.environ.get(
+        "PROVIDERS_JSON_PATH", os.path.join(app.root_path, "static", "providers.json")
+    )
 
     def _load_providers_json() -> dict:
         try:

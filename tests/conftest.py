@@ -14,6 +14,14 @@ from database import init_db  # noqa: E402
 @pytest.fixture()
 def client(tmp_path):
     """Flask test client backed by a fresh temp SQLite database per test."""
+    # Prepare isolated providers.json BEFORE app creation so factory picks it up
+    providers_src = Path(ROOT / "static" / "providers.json")
+    providers_dst = tmp_path / "providers.json"
+    if providers_src.exists():
+        providers_dst.write_text(providers_src.read_text(encoding="utf-8"), encoding="utf-8")
+    import os
+    os.environ["PROVIDERS_JSON_PATH"] = str(providers_dst)
+
     app = create_app()
     app.config.update(TESTING=True)
 

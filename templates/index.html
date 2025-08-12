@@ -44,11 +44,15 @@ Omni Chat
           <label for="model" class="text-sm text-white/70">Model</label>
           <div class="relative">
             <div class="relative">
-              <select id="model" data-testid="model-select" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-14 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-48">
+              <select id="model" data-testid="model-select" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-28 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-48">
                 <option>Select provider first</option>
               </select>
-              <span class="pointer-events-none absolute right-8 top-1/2 -translate-y-1/2 text-white/70">▾</span>
-              <button id="toggle-favorite" title="Toggle favorite" class="absolute right-1 top-1/2 -translate-y-1/2 text-white/40 hover:text-yellow-400 transition" aria-label="Toggle favorite">☆</button>
+              <span class="pointer-events-none absolute right-20 top-1/2 -translate-y-1/2 text-white/70" style="right:4.75rem">▾</span>
+              <button id="toggle-favorite" title="Toggle favorite" class="absolute right-12 top-1/2 -translate-y-1/2 text-white/40 hover:text-yellow-400 transition" aria-label="Toggle favorite">☆</button>
+              <button id="model-config-btn" title="Configure model parameters" class="absolute right-1 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-white/70 hover:text-white transition" aria-label="Configure model">
+                <!-- Gear icon (SVG) -->
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.757.426 1.757 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.757-2.924 1.757-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.757-.426-1.757-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.573-1.065Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+              </button>
             </div>
           </div>
         </div>
@@ -86,6 +90,33 @@ Omni Chat
   </section>
 </div>
 
+<!-- Centered modal for model configuration -->
+<div id="config-overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity z-40 flex items-center justify-center p-4">
+  <div id="config-modal" class="w-full max-w-xl bg-neutral-900 border border-white/15 rounded-2xl shadow-2xl ring-1 ring-black/60 flex flex-col max-h-[85vh] opacity-0 scale-95 transition-all">
+    <div class="px-5 py-4 border-b border-white/10 flex items-center gap-3">
+      <div class="flex items-center gap-2 text-sm font-semibold tracking-wide">
+        <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-primary-600/20 text-primary-300">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.757.426 1.757 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.757-2.924 1.757-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.757-.426-1.757-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.573-1.065Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+        </span>
+        <span>Model Parameters</span>
+      </div>
+      <div class="ms-auto flex items-center gap-2">
+        <button id="reset-config" class="text-xs text-white/50 hover:text-white underline decoration-dotted">Reset</button>
+        <button id="close-config" class="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition" title="Close" aria-label="Close">
+          ✕
+        </button>
+      </div>
+    </div>
+    <div id="config-body" class="p-5 overflow-y-auto text-sm space-y-5 flex-1">
+      <p class="text-white/50">Select a provider & model to load configurable parameters.</p>
+    </div>
+    <div class="px-5 py-4 border-t border-white/10 flex justify-end gap-3">
+      <button id="close-config-footer" class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white/80 hover:text-white transition">Close</button>
+      <button id="apply-config" class="px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 focus:ring-2 focus:ring-primary-400/40 text-sm font-medium transition">Apply</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const providerEl = document.getElementById('provider');
   const favoriteModelEl = document.getElementById('favorite-model');
@@ -100,6 +131,18 @@ Omni Chat
   const chatTitleEl = document.getElementById('chat-title');
   const deleteChatEl = document.getElementById('delete-chat');
   const toastEl = document.getElementById('toast');
+  const modelConfigBtn = document.getElementById('model-config-btn');
+  const configOverlay = document.getElementById('config-overlay');
+  const configModal = document.getElementById('config-modal');
+  const closeConfigBtn = document.getElementById('close-config');
+  const closeConfigFooterBtn = document.getElementById('close-config-footer');
+  const applyConfigBtn = document.getElementById('apply-config');
+  const configBody = document.getElementById('config-body');
+  const resetConfigBtn = document.getElementById('reset-config');
+
+  // In-memory current param values keyed by name
+  let currentParams = {};
+  let defaultParams = {};
   function showToast(msg) {
     if (!msg) return;
     toastEl.textContent = msg;
@@ -147,6 +190,8 @@ Omni Chat
       modelEl.value = defaultSelection.model;
     }
     updateFavoriteStar();
+  // Reload model parameter schema when model changes
+  fetchModelConfig();
   }
   function populateFavoritesDropdown() {
     const options = ['<option value="" disabled>Favorites</option>'];
@@ -206,11 +251,101 @@ Omni Chat
 
   modelEl.addEventListener('change', () => {
     updateFavoriteStar();
+  fetchModelConfig();
   });
 
   providerEl.addEventListener('change', () => {
     populateModels();
+  fetchModelConfig();
   });
+  function openConfigModal() {
+    configOverlay.classList.remove('pointer-events-none');
+    requestAnimationFrame(() => {
+      configOverlay.classList.add('opacity-100');
+      configModal.classList.add('opacity-100','scale-100');
+    });
+    fetchModelConfig();
+  }
+  function closeConfigModal() {
+    configOverlay.classList.add('pointer-events-none');
+    configOverlay.classList.remove('opacity-100');
+    configModal.classList.remove('opacity-100','scale-100');
+  }
+  modelConfigBtn.addEventListener('click', (e) => { e.preventDefault(); openConfigModal(); });
+  closeConfigBtn.addEventListener('click', () => closeConfigModal());
+  closeConfigFooterBtn.addEventListener('click', () => closeConfigModal());
+  applyConfigBtn.addEventListener('click', () => closeConfigModal());
+  configOverlay.addEventListener('click', (e) => { if (e.target === configOverlay) closeConfigModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeConfigModal(); });
+  resetConfigBtn.addEventListener('click', (e) => { e.preventDefault(); currentParams = { ...defaultParams }; renderParamsForm(); });
+
+  async function fetchModelConfig() {
+    const provider = providerEl.value;
+    const model = modelEl.value;
+    if (!provider || !model) return;
+    try {
+      const res = await fetch(`/api/model-config?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`);
+      if (!res.ok) throw new Error('config fetch failed');
+      const data = await res.json();
+      const params = data.params || [];
+      defaultParams = {};
+      params.forEach(p => { defaultParams[p.name] = p.default; });
+      // Preserve any existing values for parameters when switching models within same provider if names overlap
+      currentParams = Object.fromEntries(Object.entries(defaultParams).map(([k,v]) => [k, (k in currentParams) ? currentParams[k] : v]));
+      renderParamsForm(params);
+    } catch (e) {
+      configBody.innerHTML = '<p class="text-red-300 text-sm">Failed to load model configuration.</p>';
+    }
+  }
+
+  function renderParamsForm(paramsMeta) {
+    paramsMeta = paramsMeta || [];
+    if (!paramsMeta.length) {
+      configBody.innerHTML = '<p class="text-white/50 text-sm">No configurable parameters for this model.</p>';
+      return;
+    }
+    const fields = paramsMeta.map(meta => {
+      const val = currentParams[meta.name];
+      if (meta.type === 'number' || meta.type === 'integer') {
+        return `<label class="block space-y-1">
+          <div class="flex justify-between"><span>${meta.label || meta.name}</span><span class="text-white/40 text-xs" id="val-${meta.name}">${val}</span></div>
+          <input type="range" data-param="${meta.name}" min="${meta.min}" max="${meta.max}" step="${meta.step}" value="${val}" class="w-full accent-primary-400" />
+        </label>`;
+      } else if (meta.type === 'select') {
+        const opts = (meta.options||[]).map(o => `<option value="${o}" ${o===val?'selected':''}>${o}</option>`).join('');
+        return `<label class="block space-y-1">
+          <div class="flex justify-between"><span>${meta.label || meta.name}</span></div>
+          <select data-param="${meta.name}" class="w-full bg-white/10 border border-white/10 rounded px-2 py-1 text-sm">${opts}</select>
+        </label>`;
+      } else if (meta.type === 'boolean') {
+        return `<label class="flex items-center gap-2">
+          <input type="checkbox" data-param="${meta.name}" ${val? 'checked':''} class="accent-primary-400" />
+          <span>${meta.label || meta.name}</span>
+        </label>`;
+      } else if (meta.type === 'string') {
+        return `<label class="block space-y-1">
+          <div class="flex justify-between"><span>${meta.label || meta.name}</span></div>
+          <input type="text" data-param="${meta.name}" value="${val || ''}" placeholder="${meta.placeholder || ''}" class="w-full bg-white/10 border border-white/10 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40" />
+          ${meta.hint ? `<p class='text-[10px] text-white/40'>${meta.hint}</p>`: ''}
+        </label>`;
+      }
+      return '';
+    }).join('<div class="h-2"></div>');
+    configBody.innerHTML = `<form id="params-form" class="space-y-4">${fields}</form>`;
+    const form = document.getElementById('params-form');
+    form.querySelectorAll('[data-param]').forEach(el => {
+      el.addEventListener('input', () => {
+        const name = el.getAttribute('data-param');
+        let value;
+        if (el.type === 'checkbox') value = el.checked;
+        else if (el.tagName === 'SELECT') value = el.value;
+        else if (el.type === 'range') value = parseFloat(el.value);
+        currentParams[name] = value;
+        const valLabel = document.getElementById(`val-${name}`);
+        if (valLabel) valLabel.textContent = value;
+      });
+    });
+  }
   // remove old listener already replaced
 
   async function loadHistory() {
@@ -349,7 +484,7 @@ Omni Chat
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title })
+  body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, params: currentParams })
       });
 
       if (!response.ok) {

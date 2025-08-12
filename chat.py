@@ -115,7 +115,10 @@ def _is_reasoning_model(model: str) -> bool:
 
 
 def _openai_call(
-    model: str, history: List[Dict[str, str]], message: str
+    model: str,
+    history: List[Dict[str, str]],
+    message: str,
+    params: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     """Call OpenAI API with formatted history.
 
@@ -133,20 +136,40 @@ def _openai_call(
 
     client = OpenAI(api_key=key)
     messages = _format_history_for_openai(history, message)
+    params = params or {}
+    # Whitelist of supported OpenAI Chat Completions parameters
+    allowed = {
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "presence_penalty",
+        "frequency_penalty",
+        "seed",
+        "stop",
+        "response_format",
+        "thinking",
+        "thinking_budget_tokens",
+    }
+    call_args = {k: params[k] for k in allowed if k in params}
 
     if _is_reasoning_model(model):
         # Use Responses API for reasoning models like o3-mini.
         # Casting messages because SDK expects complex union types; runtime accepts our structure.
+        # Allow overriding reasoning_effort & temperature for reasoning models
+        reasoning_effort = params.get("reasoning_effort", "low")
+        reasoning_payload: Dict[str, Any] = {"effort": reasoning_effort}
         reasoning_resp = client.responses.create(  # type: ignore[arg-type,assignment]
             model=model,
             input=cast(Any, messages),
-            reasoning={"effort": "low"},
+            reasoning=reasoning_payload,
+            **({k: v for k, v in call_args.items() if k != "max_tokens"}),
         )
         return getattr(reasoning_resp, "output_text", None)
     else:
         completion_resp = client.chat.completions.create(  # type: ignore[arg-type,assignment]
             model=model,
             messages=cast(Any, messages),
+            **call_args,
         )
         # choices attribute is dynamic from SDK; ignore for typing
         content = (
@@ -158,7 +181,10 @@ def _openai_call(
 
 
 def _openai_call_stream(
-    model: str, history: List[Dict[str, str]], message: str
+    model: str,
+    history: List[Dict[str, str]],
+    message: str,
+    params: Optional[Dict[str, Any]] = None,
 ) -> Iterator[str]:
     """Call OpenAI API with streaming.
 
@@ -180,13 +206,27 @@ def _openai_call_stream(
 
     client = OpenAI(api_key=key)
     messages = _format_history_for_openai(history, message)
+    params = params or {}
+    allowed = {
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "presence_penalty",
+        "frequency_penalty",
+        "seed",
+        "stop",
+        "response_format",
+        "thinking",
+        "thinking_budget_tokens",
+    }
+    call_args = {k: params[k] for k in allowed if k in params}
 
     if _is_reasoning_model(model):
         # Reasoning models don't support streaming currently, fall back to non-streaming
         logger.info(
             f"[OPENAI] Using reasoning model {model}, falling back to non-streaming"
         )
-        content = _openai_call(model, history, message)
+        content = _openai_call(model, history, message, params=params)
         if content:
             logger.info(
                 f"[OPENAI] Got full content from reasoning model: {len(content)} chars"
@@ -199,6 +239,7 @@ def _openai_call_stream(
             model=model,
             messages=cast(Any, messages),
             stream=True,
+            **call_args,
         )
         token_count = 0
         for chunk in stream:
@@ -238,7 +279,10 @@ def _format_history_for_gemini(
 
 
 def _gemini_call(
-    model: str, history: List[Dict[str, str]], message: str
+    model: str,
+    history: List[Dict[str, str]],
+    message: str,
+    params: Optional[Dict[str, Any]] = None,
 ) -> Optional[str]:
     """Call Google Gemini API with formatted history.
 
@@ -256,7 +300,11 @@ def _gemini_call(
 
     genai.configure(api_key=key)
     chat_history, user_text = _format_history_for_gemini(history, message)
-    model_obj = genai.GenerativeModel(model)
+    params = params or {}
+    allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
+    generation_config = {k: params[k] for k in allowed if k in params}
+    # web_search boolean could be toggled via safety_settings or tools in real API; placeholder ignore
+    model_obj = genai.GenerativeModel(model, generation_config=generation_config or None)
 
     # Start a new chat with prior history and send the latest message
     chat = model_obj.start_chat(history=cast(Any, chat_history))  # type: ignore[arg-type]
@@ -275,7 +323,10 @@ def _gemini_call(
 
 
 def _gemini_call_stream(
-    model: str, history: List[Dict[str, str]], message: str
+    model: str,
+    history: List[Dict[str, str]],
+    message: str,
+    params: Optional[Dict[str, Any]] = None,
 ) -> Iterator[str]:
     """Call Google Gemini API with streaming.
 
@@ -293,7 +344,10 @@ def _gemini_call_stream(
 
     genai.configure(api_key=key)
     chat_history, user_text = _format_history_for_gemini(history, message)
-    model_obj = genai.GenerativeModel(model)
+    params = params or {}
+    allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
+    generation_config = {k: params[k] for k in allowed if k in params}
+    model_obj = genai.GenerativeModel(model, generation_config=generation_config or None)
     chat = model_obj.start_chat(history=cast(Any, chat_history))  # type: ignore[arg-type]
 
     # Stream the response
@@ -315,6 +369,7 @@ def generate_reply(
     model: str,
     message: str,
     history: Optional[List[Dict[str, str]]] = None,
+    params: Optional[Dict[str, Any]] = None,
 ) -> ChatReply:
     """Generate a chat response using the specified provider.
 
@@ -341,7 +396,7 @@ def generate_reply(
 
     if provider_lower == "openai":
         try:
-            content = _openai_call(model, history, message)
+            content = _openai_call(model, history, message, params=params)
             if content:
                 return ChatReply(reply=content)
             # Check for missing key/client
@@ -358,7 +413,7 @@ def generate_reply(
 
     elif provider_lower == "gemini":
         try:
-            content = _gemini_call(model, history, message)
+            content = _gemini_call(model, history, message, params=params)
             if content:
                 return ChatReply(reply=content)
             key = _get_api_key("gemini")
@@ -380,6 +435,7 @@ def generate_reply_stream(
     model: str,
     message: str,
     history: Optional[List[Dict[str, str]]] = None,
+    params: Optional[Dict[str, Any]] = None,
 ) -> Iterator[StreamChunk]:
     """Generate a streaming chat response using the specified provider.
 
@@ -421,7 +477,7 @@ def generate_reply_stream(
 
             had_content = False
             token_count = 0
-            for token in _openai_call_stream(model, history, message):
+            for token in _openai_call_stream(model, history, message, params=params):
                 if token:
                     had_content = True
                     token_count += 1
@@ -447,7 +503,7 @@ def generate_reply_stream(
 
             had_content = False
             token_count = 0
-            for token in _gemini_call_stream(model, history, message):
+            for token in _gemini_call_stream(model, history, message, params=params):
                 if token:
                     had_content = True
                     token_count += 1

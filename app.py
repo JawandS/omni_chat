@@ -152,7 +152,8 @@ def create_app() -> Flask:
 
             # Generate and save assistant reply
             history = data.get("history") or []
-            reply_obj = generate_reply(provider, model, message, history)
+            params = data.get("params") or {}
+            reply_obj = generate_reply(provider, model, message, history, params=params)
             insert_message(
                 chat_id,
                 "assistant",
@@ -244,8 +245,9 @@ def create_app() -> Flask:
                     full_reply = ""
 
                     # Generate streaming reply
+                    params = data.get("params") or {}
                     for chunk in generate_reply_stream(
-                        provider, model, message, history
+                        provider, model, message, history, params=params
                     ):
                         if chunk.token:
                             full_reply += chunk.token
@@ -602,6 +604,68 @@ def create_app() -> Flask:
     @app.get("/api/providers-config")
     def api_get_providers_config():
         return jsonify(_load_providers_json())
+
+    # Dynamic model parameter metadata --------------------------------------
+    @app.get("/api/model-config")
+    def api_model_config():
+        """Return configurable parameter schema for a provider/model.
+
+        Query params:
+            provider: provider id (required)
+            model: model id/name (required)
+
+        Response JSON shape:
+            {
+              "provider": str,
+              "model": str,
+              "params": [
+                 { "name": "temperature", "type": "number", "min":0, "max":2, "step":0.01, "default":1.0, "label": "Temperature" },
+                 ...
+              ]
+            }
+        """
+        provider = (request.args.get("provider") or "").strip().lower()
+        model = (request.args.get("model") or "").strip()
+        if not provider or not model:
+            return jsonify({"error": "provider and model required"}), 400
+
+        # Basic heuristics per provider/model family. Real implementation could introspect SDK.
+        params: list[dict] = []
+        if provider == "openai":
+            # Reasoning models (o3*) allow reasoning_effort; others standard chat params
+            base = [
+                {"name": "temperature", "type": "number", "min": 0, "max": 2, "step": 0.01, "default": 1.0, "label": "Temperature"},
+                {"name": "top_p", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 1.0, "label": "Top P"},
+                {"name": "max_tokens", "type": "integer", "min": 1, "max": 8192, "step": 1, "default": 2048, "label": "Max Tokens"},
+                {"name": "presence_penalty", "type": "number", "min": -2, "max": 2, "step": 0.01, "default": 0.0, "label": "Presence Penalty"},
+                {"name": "frequency_penalty", "type": "number", "min": -2, "max": 2, "step": 0.01, "default": 0.0, "label": "Frequency Penalty"},
+            ]
+            # Additional advanced params (exposed only for GPT-5 family to reduce clutter elsewhere)
+            if model.lower().startswith("gpt-5"):
+                base.extend([
+                    {"name": "seed", "type": "integer", "min": 0, "max": 2147483647, "step": 1, "default": 0, "label": "Seed"},
+                    {"name": "stop", "type": "string", "default": "", "label": "Stop Sequences (comma)"},
+                    {"name": "response_format", "type": "select", "options": ["text", "json_object"], "default": "text", "label": "Response Format"},
+                    {"name": "thinking", "type": "select", "options": ["none", "light", "deep"], "default": "none", "label": "Thinking Mode"},
+                    {"name": "thinking_budget_tokens", "type": "integer", "min": 32, "max": 8192, "step": 1, "default": 512, "label": "Thinking Budget"},
+                ])
+            if model.lower().startswith("o3"):
+                base.append({
+                    "name": "reasoning_effort", "type": "select", "options": ["low", "medium", "high"], "default": "low", "label": "Reasoning Effort"
+                })
+            params = base
+        elif provider == "gemini":
+            params = [
+                {"name": "temperature", "type": "number", "min": 0, "max": 2, "step": 0.01, "default": 1.0, "label": "Temperature"},
+                {"name": "top_p", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 1.0, "label": "Top P"},
+                {"name": "top_k", "type": "integer", "min": 1, "max": 100, "step": 1, "default": 40, "label": "Top K"},
+                {"name": "max_output_tokens", "type": "integer", "min": 16, "max": 8192, "step": 1, "default": 1024, "label": "Max Output Tokens"},
+                {"name": "web_search", "type": "boolean", "default": False, "label": "Web Search"},
+            ]
+        else:
+            return jsonify({"error": "unknown provider"}), 400
+
+        return jsonify({"provider": provider, "model": model, "params": params})
 
     return app
 

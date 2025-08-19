@@ -196,8 +196,13 @@ Omni Chat
   function populateFavoritesDropdown() {
     const options = ['<option value="" disabled>Favorites</option>'];
     for (const fav of favorites) {
-      const [prov, model] = fav.split(':');
-      options.push(`<option value="${fav}">${prov}:${model}</option>`);
+      // Split only on first colon to handle model names with colons (like ollama:model:tag)
+      const colonIndex = fav.indexOf(':');
+      if (colonIndex !== -1) {
+        const prov = fav.substring(0, colonIndex);
+        const model = fav.substring(colonIndex + 1);
+        options.push(`<option value="${fav}">${prov}:${model}</option>`);
+      }
     }
     favoriteModelEl.innerHTML = options.join('');
     // Always ensure placeholder is selected after repopulation
@@ -207,11 +212,26 @@ Omni Chat
   favoriteModelEl.addEventListener('change', () => {
     const val = favoriteModelEl.value;
     if (!val) return;
-    const [prov, model] = val.split(':');
+    
+    // Split only on the first colon to handle model names with colons (like ollama:model:tag)
+    const colonIndex = val.indexOf(':');
+    if (colonIndex === -1) return;
+    
+    const prov = val.substring(0, colonIndex);
+    const model = val.substring(colonIndex + 1);
+    
     if (prov && model) {
       providerEl.value = prov;
       populateModels();
-      modelEl.value = model;
+      
+      // Check if the model is available in the models list before setting it
+      const modelOptions = Array.from(modelEl.options).map(opt => opt.value);
+      if (modelOptions.includes(model)) {
+        modelEl.value = model;
+      } else {
+        console.warn(`Model "${model}" not found in provider "${prov}" models:`, modelOptions);
+      }
+      
       updateFavoriteStar();
       // Reset dropdown back to placeholder so selection doesn't persist visually
       favoriteModelEl.selectedIndex = 0;

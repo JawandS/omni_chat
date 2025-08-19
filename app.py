@@ -541,37 +541,6 @@ def create_app() -> Flask:
             json.dump(data, f, indent=2, ensure_ascii=False)
         os.replace(tmp_path, PROVIDERS_JSON_PATH)
 
-    def _get_dynamic_providers_config() -> dict:
-        """Get providers config with dynamic Ollama models if available."""
-        # Load static providers from JSON
-        data = _load_providers_json()
-        providers = data.get("providers", []).copy()
-        
-        # Try to add Ollama dynamically
-        from chat import is_ollama_available, start_ollama_server, get_ollama_models
-        
-        if is_ollama_available():
-            # Try to start Ollama server if not running
-            start_ollama_server()
-            
-            # Get available models
-            models = get_ollama_models()
-            if models:
-                # Add Ollama provider with current models
-                ollama_provider = {
-                    "id": "ollama",
-                    "name": "Ollama (Local)",
-                    "models": models
-                }
-                providers.append(ollama_provider)
-        
-        # Return updated config without modifying the file
-        return {
-            "providers": providers,
-            "favorites": data.get("favorites", []),
-            "default": data.get("default", {"provider": None, "model": None})
-        }
-
     def _validate_provider_model(provider: str, model: str) -> bool:
         data = _load_providers_json()
         for p in data.get("providers", []):
@@ -634,7 +603,7 @@ def create_app() -> Flask:
 
     @app.get("/api/providers-config")
     def api_get_providers_config():
-        return jsonify(_get_dynamic_providers_config())
+        return jsonify(_load_providers_json())
 
     # Dynamic model parameter metadata --------------------------------------
     @app.get("/api/model-config")
@@ -715,21 +684,66 @@ def create_app() -> Flask:
     return app
 
 
-def _initialize_ollama():
+def _initialize_ollama_with_app(app_instance):
     """Initialize Ollama server and update providers.json at startup."""
     try:
+        # We need to access the helper functions that are defined inside create_app
+        # So we'll implement the logic here directly
+        
+        # Allow tests (or other environments) to override the providers.json path
+        PROVIDERS_JSON_PATH = os.environ.get(
+            "PROVIDERS_JSON_PATH", os.path.join(app_instance.root_path, "static", "providers.json")
+        )
+
+        def _load_providers_json() -> dict:
+            try:
+                with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except FileNotFoundError:
+                return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+            except Exception:
+                return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+
+        def _write_providers_json(data: dict) -> None:
+            os.makedirs(os.path.dirname(PROVIDERS_JSON_PATH), exist_ok=True)
+            tmp_path = PROVIDERS_JSON_PATH + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_path, PROVIDERS_JSON_PATH)
+
+        # Load current providers data
+        data = _load_providers_json()
+        providers = data.get("providers", [])
+        
+        # Remove existing Ollama provider if present
+        providers = [p for p in providers if p.get("id") != "ollama"]
+        
+        # Check if Ollama is available and get models
         if is_ollama_available():
-            print("Ollama detected, attempting to start server...")
+            # Try to start Ollama server if not running
             if start_ollama_server():
-                print("Ollama server started successfully.")
-                # Update providers.json with current models
-                from chat import get_ollama_models
+                # Get available models
                 models = get_ollama_models()
-                print(f"Found {len(models)} Ollama models: {models}")
+                if models:
+                    # Add Ollama provider with current models
+                    ollama_provider = {
+                        "id": "ollama",
+                        "name": "Ollama (Local)", 
+                        "models": models
+                    }
+                    providers.append(ollama_provider)
+                    print(f"Added Ollama provider with {len(models)} models to providers.json: {models}")
+                else:
+                    print("Ollama server running but no models found")
             else:
-                print("Failed to start Ollama server.")
+                print("Failed to start Ollama server")
         else:
-            print("Ollama not available on this system.")
+            print("Ollama not available - removed from providers.json if it was there")
+        
+        # Update providers data and save
+        data["providers"] = providers
+        _write_providers_json(data)
+            
     except Exception as e:
         print(f"Error initializing Ollama: {e}")
 
@@ -737,8 +751,8 @@ def _initialize_ollama():
 # Create the main application instance
 app = create_app()
 
-# Initialize Ollama on startup
-_initialize_ollama()
+# Initialize Ollama and update providers.json on startup
+_initialize_ollama_with_app(app)
 
 
 if __name__ == "__main__":

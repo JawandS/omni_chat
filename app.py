@@ -23,7 +23,7 @@ from database import (
     update_chat as db_update_chat,
     delete_chat,
 )
-from chat import generate_reply, generate_reply_stream
+from chat import generate_reply, generate_reply_stream, is_ollama_available, start_ollama_server, get_ollama_models
 
 
 def _validate_chat_request(data: dict) -> tuple[str, str, str]:
@@ -541,6 +541,37 @@ def create_app() -> Flask:
             json.dump(data, f, indent=2, ensure_ascii=False)
         os.replace(tmp_path, PROVIDERS_JSON_PATH)
 
+    def _get_dynamic_providers_config() -> dict:
+        """Get providers config with dynamic Ollama models if available."""
+        # Load static providers from JSON
+        data = _load_providers_json()
+        providers = data.get("providers", []).copy()
+        
+        # Try to add Ollama dynamically
+        from chat import is_ollama_available, start_ollama_server, get_ollama_models
+        
+        if is_ollama_available():
+            # Try to start Ollama server if not running
+            start_ollama_server()
+            
+            # Get available models
+            models = get_ollama_models()
+            if models:
+                # Add Ollama provider with current models
+                ollama_provider = {
+                    "id": "ollama",
+                    "name": "Ollama (Local)",
+                    "models": models
+                }
+                providers.append(ollama_provider)
+        
+        # Return updated config without modifying the file
+        return {
+            "providers": providers,
+            "favorites": data.get("favorites", []),
+            "default": data.get("default", {"provider": None, "model": None})
+        }
+
     def _validate_provider_model(provider: str, model: str) -> bool:
         data = _load_providers_json()
         for p in data.get("providers", []):
@@ -603,7 +634,7 @@ def create_app() -> Flask:
 
     @app.get("/api/providers-config")
     def api_get_providers_config():
-        return jsonify(_load_providers_json())
+        return jsonify(_get_dynamic_providers_config())
 
     # Dynamic model parameter metadata --------------------------------------
     @app.get("/api/model-config")
@@ -662,6 +693,20 @@ def create_app() -> Flask:
                 {"name": "max_output_tokens", "type": "integer", "min": 16, "max": 8192, "step": 1, "default": 1024, "label": "Max Output Tokens"},
                 {"name": "web_search", "type": "boolean", "default": False, "label": "Web Search"},
             ]
+        elif provider == "ollama":
+            params = [
+                {"name": "temperature", "type": "number", "min": 0, "max": 2, "step": 0.01, "default": 0.8, "label": "Temperature"},
+                {"name": "top_p", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.9, "label": "Top P"},
+                {"name": "top_k", "type": "integer", "min": 1, "max": 100, "step": 1, "default": 40, "label": "Top K"},
+                {"name": "max_tokens", "type": "integer", "min": 1, "max": 8192, "step": 1, "default": 2048, "label": "Max Tokens"},
+            ]
+        elif provider == "ollama":
+            params = [
+                {"name": "temperature", "type": "number", "min": 0, "max": 2, "step": 0.01, "default": 0.8, "label": "Temperature"},
+                {"name": "top_p", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.9, "label": "Top P"},
+                {"name": "top_k", "type": "integer", "min": 1, "max": 100, "step": 1, "default": 40, "label": "Top K"},
+                {"name": "max_tokens", "type": "integer", "min": 1, "max": 8192, "step": 1, "default": 2048, "label": "Max Tokens"},
+            ]
         else:
             return jsonify({"error": "unknown provider"}), 400
 
@@ -670,8 +715,30 @@ def create_app() -> Flask:
     return app
 
 
+def _initialize_ollama():
+    """Initialize Ollama server and update providers.json at startup."""
+    try:
+        if is_ollama_available():
+            print("Ollama detected, attempting to start server...")
+            if start_ollama_server():
+                print("Ollama server started successfully.")
+                # Update providers.json with current models
+                from chat import get_ollama_models
+                models = get_ollama_models()
+                print(f"Found {len(models)} Ollama models: {models}")
+            else:
+                print("Failed to start Ollama server.")
+        else:
+            print("Ollama not available on this system.")
+    except Exception as e:
+        print(f"Error initializing Ollama: {e}")
+
+
 # Create the main application instance
 app = create_app()
+
+# Initialize Ollama on startup
+_initialize_ollama()
 
 
 if __name__ == "__main__":

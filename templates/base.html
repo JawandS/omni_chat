@@ -250,6 +250,10 @@
         const data = await r.json();
         renderBlacklist(data.blacklist);
         blacklistInput.value = '';
+        // Refresh the blacklist cache in the main page
+        if (window.loadBlacklist) {
+          window.loadBlacklist();
+        }
       }
     } catch (_) {}
   }
@@ -262,6 +266,10 @@
       if (r.ok) {
         const data = await r.json();
         renderBlacklist(data.blacklist);
+        // Refresh the blacklist cache in the main page
+        if (window.loadBlacklist) {
+          window.loadBlacklist();
+        }
       }
     } catch (_) {}
   }

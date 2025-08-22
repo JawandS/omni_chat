@@ -22,6 +22,19 @@ from database import (
     get_messages,
     update_chat as db_update_chat,
     delete_chat,
+    # Project functions
+    create_project,
+    get_project,
+    list_projects,
+    update_project,
+    delete_project,
+    touch_project,
+    # Project file functions
+    create_project_file,
+    get_project_files,
+    get_project_file,
+    update_project_file,
+    delete_project_file,
 )
 from chat import generate_reply, generate_reply_stream, is_ollama_available, start_ollama_server, get_ollama_models
 
@@ -54,7 +67,7 @@ def _validate_chat_request(data: dict) -> tuple[str, str, str]:
 
 
 def _create_or_update_chat(
-    chat_id: Optional[int], title: str, provider: str, model: str, now: str
+    chat_id: Optional[int], title: str, provider: str, model: str, now: str, project_id: Optional[int] = None
 ) -> int:
     """Create a new chat or update existing chat metadata.
 
@@ -64,12 +77,13 @@ def _create_or_update_chat(
         provider: AI provider name.
         model: AI model name.
         now: Current timestamp.
+        project_id: Optional project ID to associate with this chat.
 
     Returns:
         Chat ID (new or existing).
     """
     if not chat_id:
-        chat_id = create_chat(title, provider, model, now)
+        chat_id = create_chat(title, provider, model, now, project_id)
         logging.getLogger(__name__).info(f"Created new chat with ID: {chat_id}")
     else:
         update_chat_meta(chat_id, provider, model, now)
@@ -141,8 +155,16 @@ def create_app() -> Flask:
                     (message[:48] + "…") if len(message) > 49 else message or "New chat"
                 )
 
+            # Extract optional project_id from request
+            project_id = data.get("project_id")
+            if project_id is not None and not isinstance(project_id, int):
+                try:
+                    project_id = int(project_id)
+                except (ValueError, TypeError):
+                    project_id = None
+
             # Create or update chat
-            chat_id = _create_or_update_chat(chat_id, title, provider, model, now)
+            chat_id = _create_or_update_chat(chat_id, title, provider, model, now, project_id)
 
             # Save user message
             insert_message(
@@ -219,8 +241,16 @@ def create_app() -> Flask:
                     (message[:48] + "…") if len(message) > 49 else message or "New chat"
                 )
 
+            # Extract optional project_id from request
+            project_id = data.get("project_id")
+            if project_id is not None and not isinstance(project_id, int):
+                try:
+                    project_id = int(project_id)
+                except (ValueError, TypeError):
+                    project_id = None
+
             # Create or update chat and commit immediately for streaming
-            chat_id = _create_or_update_chat(chat_id, title, provider, model, request_ts)
+            chat_id = _create_or_update_chat(chat_id, title, provider, model, request_ts, project_id)
             commit()
 
             # Save user message with its own timestamp and immediately bump chat updated_at
@@ -319,6 +349,7 @@ def create_app() -> Flask:
                         "title": r["title"],
                         "provider": r["provider"],
                         "model": r["model"],
+                        "project_id": r["project_id"],
                         "updated_at": r["updated_at"],
                     }
                     for r in rows
@@ -341,6 +372,18 @@ def create_app() -> Flask:
             return jsonify({"error": "not found"}), 404
 
         messages = get_messages(chat_id)
+        message_list = []
+        for m in messages:
+            message_list.append(
+                {
+                    "role": m["role"],
+                    "content": m["content"],
+                    "provider": m["provider"],
+                    "model": m["model"],
+                    "created_at": m["created_at"],
+                }
+            )
+
         return jsonify(
             {
                 "chat": {
@@ -348,19 +391,11 @@ def create_app() -> Flask:
                     "title": chat["title"],
                     "provider": chat["provider"],
                     "model": chat["model"],
+                    "project_id": chat["project_id"],
                     "created_at": chat["created_at"],
                     "updated_at": chat["updated_at"],
                 },
-                "messages": [
-                    {
-                        "role": m["role"],
-                        "content": m["content"],
-                        "provider": m["provider"],
-                        "model": m["model"],
-                        "created_at": m["created_at"],
-                    }
-                    for m in messages
-                ],
+                "messages": message_list,
             }
         )
 
@@ -411,6 +446,276 @@ def create_app() -> Flask:
             return jsonify({"error": "not found"}), 404
 
         delete_chat(chat_id)
+        commit()
+        return jsonify({"ok": True})
+
+    # Projects API -----------------------------------------------------------
+
+    @app.get("/api/projects")
+    def api_list_projects():
+        """Get a list of all projects ordered by most recent activity.
+
+        Returns:
+            JSON response with an array of project objects.
+        """
+        projects = list_projects()
+        project_list = []
+        for p in projects:
+            project_list.append(
+                {
+                    "id": p["id"],
+                    "name": p["name"],
+                    "description": p["description"],
+                    "system_prompt": p["system_prompt"],
+                    "updated_at": p["updated_at"],
+                }
+            )
+        return jsonify({"projects": project_list})
+
+    @app.post("/api/projects")
+    def api_create_project():
+        """Create a new project.
+
+        Expected JSON body:
+            {
+                "name": str (required),
+                "description": str (optional),
+                "system_prompt": str (optional)
+            }
+
+        Returns:
+            JSON response with the created project ID and basic info.
+        """
+        data = request.get_json(silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+
+        description = (data.get("description") or "").strip() or None
+        system_prompt = (data.get("system_prompt") or "").strip() or None
+
+        try:
+            project_id = create_project(name, description, system_prompt)
+            commit()
+            return jsonify({"ok": True, "project_id": project_id, "name": name})
+        except Exception:
+            return jsonify({"error": "failed to create project"}), 500
+
+    @app.get("/api/projects/<int:project_id>")
+    def api_get_project(project_id: int):
+        """Get a specific project with its files and associated chats.
+
+        Args:
+            project_id: The project ID to retrieve.
+
+        Returns:
+            JSON response with project details, files, and chats, or 404 if not found.
+        """
+        project = get_project(project_id)
+        if not project:
+            return jsonify({"error": "not found"}), 404
+
+        # Get project files
+        files = get_project_files(project_id)
+        file_list = []
+        for f in files:
+            file_list.append(
+                {
+                    "id": f["id"],
+                    "filename": f["filename"],
+                    "content": f["content"],
+                    "created_at": f["created_at"],
+                    "updated_at": f["updated_at"],
+                }
+            )
+
+        # Get chats associated with this project
+        all_chats = list_chats()
+        project_chats = [
+            {
+                "id": c["id"],
+                "title": c["title"],
+                "provider": c["provider"],
+                "model": c["model"],
+                "updated_at": c["updated_at"],
+            }
+            for c in all_chats
+            if c["project_id"] == project_id
+        ]
+
+        return jsonify(
+            {
+                "project": {
+                    "id": project["id"],
+                    "name": project["name"],
+                    "description": project["description"],
+                    "system_prompt": project["system_prompt"],
+                    "created_at": project["created_at"],
+                    "updated_at": project["updated_at"],
+                },
+                "files": file_list,
+                "chats": project_chats,
+            }
+        )
+
+    @app.patch("/api/projects/<int:project_id>")
+    def api_update_project(project_id: int):
+        """Update project metadata.
+
+        Args:
+            project_id: The project ID to update.
+
+        Expected JSON body (all fields optional):
+            {
+                "name": str,
+                "description": str,
+                "system_prompt": str
+            }
+
+        Returns:
+            JSON response with success status or 404 if not found.
+        """
+        if not get_project(project_id):
+            return jsonify({"error": "not found"}), 404
+
+        data = request.get_json(silent=True) or {}
+        name = data.get("name")
+        description = data.get("description")
+        system_prompt = data.get("system_prompt")
+
+        # Validate name if provided
+        if name is not None:
+            name = name.strip()
+            if not name:
+                return jsonify({"error": "name cannot be empty"}), 400
+
+        try:
+            update_project(
+                project_id,
+                name=name,
+                description=description,
+                system_prompt=system_prompt,
+            )
+            commit()
+            return jsonify({"ok": True})
+        except Exception:
+            return jsonify({"error": "failed to update project"}), 500
+
+    @app.delete("/api/projects/<int:project_id>")
+    def api_delete_project(project_id: int):
+        """Delete a project and all its files. Associated chats will have their project_id set to NULL.
+
+        Args:
+            project_id: The project ID to delete.
+
+        Returns:
+            JSON response with success status or 404 if not found.
+        """
+        if not get_project(project_id):
+            return jsonify({"error": "not found"}), 404
+
+        delete_project(project_id)
+        commit()
+        return jsonify({"ok": True})
+
+    # Project Files API ------------------------------------------------------
+
+    @app.post("/api/projects/<int:project_id>/files")
+    def api_create_project_file(project_id: int):
+        """Create a new file in a project.
+
+        Args:
+            project_id: The project ID to add the file to.
+
+        Expected JSON body:
+            {
+                "filename": str (required),
+                "content": str (required)
+            }
+
+        Returns:
+            JSON response with the created file ID or 404 if project not found.
+        """
+        if not get_project(project_id):
+            return jsonify({"error": "project not found"}), 404
+
+        data = request.get_json(silent=True) or {}
+        filename = (data.get("filename") or "").strip()
+        content = data.get("content") or ""
+
+        if not filename:
+            return jsonify({"error": "filename is required"}), 400
+
+        try:
+            file_id = create_project_file(project_id, filename, content)
+            touch_project(project_id)  # Update project timestamp
+            commit()
+            return jsonify({"ok": True, "file_id": file_id, "filename": filename})
+        except Exception:
+            return jsonify({"error": "failed to create file"}), 500
+
+    @app.patch("/api/projects/<int:project_id>/files/<int:file_id>")
+    def api_update_project_file(project_id: int, file_id: int):
+        """Update a project file.
+
+        Args:
+            project_id: The project ID the file belongs to.
+            file_id: The file ID to update.
+
+        Expected JSON body (all fields optional):
+            {
+                "filename": str,
+                "content": str
+            }
+
+        Returns:
+            JSON response with success status or 404 if not found.
+        """
+        if not get_project(project_id):
+            return jsonify({"error": "project not found"}), 404
+
+        file_record = get_project_file(file_id)
+        if not file_record or file_record["project_id"] != project_id:
+            return jsonify({"error": "file not found"}), 404
+
+        data = request.get_json(silent=True) or {}
+        filename = data.get("filename")
+        content = data.get("content")
+
+        # Validate filename if provided
+        if filename is not None:
+            filename = filename.strip()
+            if not filename:
+                return jsonify({"error": "filename cannot be empty"}), 400
+
+        try:
+            update_project_file(file_id, filename=filename, content=content)
+            touch_project(project_id)  # Update project timestamp
+            commit()
+            return jsonify({"ok": True})
+        except Exception:
+            return jsonify({"error": "failed to update file"}), 500
+
+    @app.delete("/api/projects/<int:project_id>/files/<int:file_id>")
+    def api_delete_project_file(project_id: int, file_id: int):
+        """Delete a project file.
+
+        Args:
+            project_id: The project ID the file belongs to.
+            file_id: The file ID to delete.
+
+        Returns:
+            JSON response with success status or 404 if not found.
+        """
+        if not get_project(project_id):
+            return jsonify({"error": "project not found"}), 404
+
+        file_record = get_project_file(file_id)
+        if not file_record or file_record["project_id"] != project_id:
+            return jsonify({"error": "file not found"}), 404
+
+        delete_project_file(file_id)
+        touch_project(project_id)  # Update project timestamp
         commit()
         return jsonify({"ok": True})
 

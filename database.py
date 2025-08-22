@@ -52,13 +52,32 @@ def init_db() -> None:
     db = get_db()
     db.executescript(
         """
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            system_prompt TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS project_files (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
         CREATE TABLE IF NOT EXISTS chats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             provider TEXT,
             model TEXT,
+            project_id INTEGER,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE SET NULL
         );
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +93,7 @@ def init_db() -> None:
     )
     db.commit()
     _ensure_message_columns_exist()
+    _ensure_project_columns_exist()
 
 
 def _ensure_message_columns_exist() -> None:
@@ -90,6 +110,19 @@ def _ensure_message_columns_exist() -> None:
         for stmt in columns_to_add:
             db.execute(stmt)
         if columns_to_add:
+            db.commit()
+    except Exception:
+        # Best-effort migration; ignore if PRAGMA or ALTER not supported
+        pass
+
+
+def _ensure_project_columns_exist() -> None:
+    """Lightweight migration to ensure project_id column exists on chats table."""
+    try:
+        db = get_db()
+        cols = [r[1] for r in db.execute("PRAGMA table_info(chats)").fetchall()]
+        if "project_id" not in cols:
+            db.execute("ALTER TABLE chats ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
             db.commit()
     except Exception:
         # Best-effort migration; ignore if PRAGMA or ALTER not supported
@@ -117,7 +150,7 @@ def _get_timestamp(now: Optional[str] = None) -> str:
 
 
 def create_chat(
-    title: str, provider: str, model: str, now: Optional[str] = None
+    title: str, provider: str, model: str, now: Optional[str] = None, project_id: Optional[int] = None
 ) -> int:
     """Create a new chat record.
 
@@ -126,6 +159,7 @@ def create_chat(
         provider: The AI provider name.
         model: The AI model name.
         now: Optional timestamp. If None, current time is used.
+        project_id: Optional project ID to associate with this chat.
 
     Returns:
         The ID of the created chat.
@@ -133,8 +167,8 @@ def create_chat(
     db = get_db()
     ts = _get_timestamp(now)
     cur = db.execute(
-        "INSERT INTO chats (title, provider, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (title, provider, model, ts, ts),
+        "INSERT INTO chats (title, provider, model, project_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (title, provider, model, project_id, ts, ts),
     )
     last_id = cur.lastrowid  # Optional[int] per typeshed
     if not isinstance(last_id, int):  # pragma: no cover - defensive
@@ -169,6 +203,7 @@ def update_chat(
     title: Optional[str] = None,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    project_id: Optional[int] = None,
     now: Optional[str] = None,
 ) -> None:
     """Update chat fields selectively.
@@ -178,6 +213,7 @@ def update_chat(
         title: New title (optional).
         provider: New provider (optional).
         model: New model (optional).
+        project_id: New project ID (optional).
         now: Optional timestamp. If None, current time is used.
     """
     db = get_db()
@@ -192,6 +228,11 @@ def update_chat(
         db.execute(
             "UPDATE chats SET provider = COALESCE(?, provider), model = COALESCE(?, model), updated_at = ? WHERE id = ?",
             (provider, model, ts, chat_id),
+        )
+    if project_id is not None:
+        db.execute(
+            "UPDATE chats SET project_id = ?, updated_at = ? WHERE id = ?",
+            (project_id, ts, chat_id),
         )
 
 
@@ -241,12 +282,12 @@ def list_chats() -> list[sqlite3.Row]:
     """Get all chats ordered by most recent update.
 
     Returns:
-        List of chat records with id, title, provider, model, and updated_at fields.
+        List of chat records with id, title, provider, model, project_id, and updated_at fields.
     """
     return (
         get_db()
         .execute(
-            "SELECT id, title, provider, model, updated_at FROM chats ORDER BY datetime(updated_at) DESC"
+            "SELECT id, title, provider, model, project_id, updated_at FROM chats ORDER BY datetime(updated_at) DESC"
         )
         .fetchall()
     )
@@ -264,7 +305,7 @@ def get_chat(chat_id: int) -> Optional[sqlite3.Row]:
     return (
         get_db()
         .execute(
-            "SELECT id, title, provider, model, created_at, updated_at FROM chats WHERE id = ?",
+            "SELECT id, title, provider, model, project_id, created_at, updated_at FROM chats WHERE id = ?",
             (chat_id,),
         )
         .fetchone()
@@ -300,3 +341,233 @@ def delete_chat(chat_id: int) -> None:
     # Delete messages first to be safe regardless of PRAGMA being applied
     db.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
     db.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+
+
+# Project management functions -----------------------------------------------
+
+
+def create_project(
+    name: str, description: Optional[str] = None, system_prompt: Optional[str] = None, now: Optional[str] = None
+) -> int:
+    """Create a new project record.
+
+    Args:
+        name: The project name.
+        description: Optional project description.
+        system_prompt: Optional system prompt for the project.
+        now: Optional timestamp. If None, current time is used.
+
+    Returns:
+        The ID of the created project.
+    """
+    db = get_db()
+    ts = _get_timestamp(now)
+    cur = db.execute(
+        "INSERT INTO projects (name, description, system_prompt, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        (name, description, system_prompt, ts, ts),
+    )
+    last_id = cur.lastrowid
+    if not isinstance(last_id, int):  # pragma: no cover - defensive
+        raise RuntimeError("SQLite cursor did not return an integer lastrowid")
+    return last_id
+
+
+def get_project(project_id: int) -> Optional[sqlite3.Row]:
+    """Get a specific project by ID.
+
+    Args:
+        project_id: The project ID to retrieve.
+
+    Returns:
+        Project record or None if not found.
+    """
+    return (
+        get_db()
+        .execute(
+            "SELECT id, name, description, system_prompt, created_at, updated_at FROM projects WHERE id = ?",
+            (project_id,),
+        )
+        .fetchone()
+    )
+
+
+def list_projects() -> list[sqlite3.Row]:
+    """Get all projects ordered by most recent update.
+
+    Returns:
+        List of project records with id, name, description, system_prompt, and updated_at fields.
+    """
+    return (
+        get_db()
+        .execute(
+            "SELECT id, name, description, system_prompt, updated_at FROM projects ORDER BY datetime(updated_at) DESC"
+        )
+        .fetchall()
+    )
+
+
+def update_project(
+    project_id: int,
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+    now: Optional[str] = None,
+) -> None:
+    """Update project fields selectively.
+
+    Args:
+        project_id: The project ID to update.
+        name: New name (optional).
+        description: New description (optional).
+        system_prompt: New system prompt (optional).
+        now: Optional timestamp. If None, current time is used.
+    """
+    db = get_db()
+    ts = _get_timestamp(now)
+
+    if name is not None:
+        db.execute(
+            "UPDATE projects SET name = ?, updated_at = ? WHERE id = ?",
+            (name, ts, project_id),
+        )
+    if description is not None:
+        db.execute(
+            "UPDATE projects SET description = ?, updated_at = ? WHERE id = ?",
+            (description, ts, project_id),
+        )
+    if system_prompt is not None:
+        db.execute(
+            "UPDATE projects SET system_prompt = ?, updated_at = ? WHERE id = ?",
+            (system_prompt, ts, project_id),
+        )
+
+
+def delete_project(project_id: int) -> None:
+    """Delete a project and set all associated chats' project_id to NULL.
+
+    Args:
+        project_id: The project ID to delete.
+    """
+    db = get_db()
+    # Delete project files first
+    db.execute("DELETE FROM project_files WHERE project_id = ?", (project_id,))
+    # Delete the project (chats will have project_id set to NULL due to ON DELETE SET NULL)
+    db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+
+
+def touch_project(project_id: int, now: Optional[str] = None) -> None:
+    """Update a project's last updated timestamp.
+
+    Args:
+        project_id: The project ID to update.
+        now: Optional timestamp. If None, current time is used.
+    """
+    ts = _get_timestamp(now)
+    get_db().execute("UPDATE projects SET updated_at = ? WHERE id = ?", (ts, project_id))
+
+
+# Project file management functions ------------------------------------------
+
+
+def create_project_file(
+    project_id: int, filename: str, content: str, now: Optional[str] = None
+) -> int:
+    """Create a new project file record.
+
+    Args:
+        project_id: The project ID the file belongs to.
+        filename: The file name.
+        content: The file content.
+        now: Optional timestamp. If None, current time is used.
+
+    Returns:
+        The ID of the created project file.
+    """
+    db = get_db()
+    ts = _get_timestamp(now)
+    cur = db.execute(
+        "INSERT INTO project_files (project_id, filename, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        (project_id, filename, content, ts, ts),
+    )
+    last_id = cur.lastrowid
+    if not isinstance(last_id, int):  # pragma: no cover - defensive
+        raise RuntimeError("SQLite cursor did not return an integer lastrowid")
+    return last_id
+
+
+def get_project_files(project_id: int) -> list[sqlite3.Row]:
+    """Get all files for a specific project.
+
+    Args:
+        project_id: The project ID to get files for.
+
+    Returns:
+        List of file records ordered by filename.
+    """
+    return (
+        get_db()
+        .execute(
+            "SELECT id, project_id, filename, content, created_at, updated_at FROM project_files WHERE project_id = ? ORDER BY filename ASC",
+            (project_id,),
+        )
+        .fetchall()
+    )
+
+
+def get_project_file(file_id: int) -> Optional[sqlite3.Row]:
+    """Get a specific project file by ID.
+
+    Args:
+        file_id: The file ID to retrieve.
+
+    Returns:
+        File record or None if not found.
+    """
+    return (
+        get_db()
+        .execute(
+            "SELECT id, project_id, filename, content, created_at, updated_at FROM project_files WHERE id = ?",
+            (file_id,),
+        )
+        .fetchone()
+    )
+
+
+def update_project_file(
+    file_id: int,
+    *,
+    filename: Optional[str] = None,
+    content: Optional[str] = None,
+    now: Optional[str] = None,
+) -> None:
+    """Update project file fields selectively.
+
+    Args:
+        file_id: The file ID to update.
+        filename: New filename (optional).
+        content: New content (optional).
+        now: Optional timestamp. If None, current time is used.
+    """
+    db = get_db()
+    ts = _get_timestamp(now)
+
+    if filename is not None:
+        db.execute(
+            "UPDATE project_files SET filename = ?, updated_at = ? WHERE id = ?",
+            (filename, ts, file_id),
+        )
+    if content is not None:
+        db.execute(
+            "UPDATE project_files SET content = ?, updated_at = ? WHERE id = ?",
+            (content, ts, file_id),
+        )
+
+
+def delete_project_file(file_id: int) -> None:
+    """Delete a project file.
+
+    Args:
+        file_id: The file ID to delete.
+    """
+    get_db().execute("DELETE FROM project_files WHERE id = ?", (file_id,))

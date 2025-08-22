@@ -677,8 +677,47 @@ Omni Chat
   });
 
   clearHistoryEl?.addEventListener('click', async () => {
-    // Soft clear: start new chat view, leave DB intact
-    startNewChat();
+    try {
+      // First, get the count of chats and messages
+      const countRes = await fetch('/api/chats/count');
+      if (!countRes.ok) {
+        showToast('Failed to get history count');
+        return;
+      }
+      
+      const counts = await countRes.json();
+      const totalItems = counts.chats + counts.messages;
+      
+      if (totalItems === 0) {
+        showToast('No history to clear');
+        return;
+      }
+      
+      // Show confirmation dialog with detailed count
+      const message = `Are you sure you want to delete ALL chat history?\n\nThis will permanently delete:\n• ${counts.chats} chat${counts.chats !== 1 ? 's' : ''}\n• ${counts.messages} message${counts.messages !== 1 ? 's' : ''}\n\nThis action cannot be undone.`;
+      
+      if (!confirm(message)) {
+        return;
+      }
+      
+      // User confirmed, proceed with deletion
+      const deleteRes = await fetch('/api/chats', { method: 'DELETE' });
+      if (deleteRes.ok) {
+        const result = await deleteRes.json();
+        const deleted = result.deleted;
+        showToast(`Deleted ${deleted.chats} chats and ${deleted.messages} messages`);
+        
+        // Reset UI to new chat state
+        currentChatId = null;
+        startNewChat();
+        loadHistory();
+      } else {
+        showToast('Failed to clear history');
+      }
+    } catch (e) {
+      showToast('Error clearing history');
+      console.error('Clear history error:', e);
+    }
   });
 
   loadProviders();

@@ -414,6 +414,31 @@ def create_app() -> Flask:
         commit()
         return jsonify({"ok": True})
 
+    @app.get("/api/chats/count")
+    def api_count_all_history():
+        """Get count of all chats and messages in the database.
+        
+        Returns:
+            JSON response with counts of chats and messages.
+        """
+        from database import count_all_history
+        
+        counts = count_all_history()
+        return jsonify(counts)
+
+    @app.delete("/api/chats")
+    def api_delete_all_history():
+        """Delete all chats and messages from the database.
+        
+        Returns:
+            JSON response with counts of deleted chats and messages.
+        """
+        from database import delete_all_history
+        
+        deleted_counts = delete_all_history()
+        commit()
+        return jsonify({"ok": True, "deleted": deleted_counts})
+
     # Settings: API keys -----------------------------------------------------
 
     def _get_env_path() -> str:

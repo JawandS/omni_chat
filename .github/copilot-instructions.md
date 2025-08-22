@@ -3,14 +3,14 @@
 Trust this document first. Only search the codebase if something here is missing or demonstrably wrong.
 
 ## 1. Repository Summary
-Lightweight local web chat UI (Flask) that lets a user converse with AI models from different providers (currently OpenAI & Gemini) and switch model/provider mid‑conversation. Persists chats/messages in a local SQLite database (`instance/omni_chat.db`). Exposes REST + SSE streaming endpoints; frontend is plain HTML/JS templates + tailwind. Tests fully mock external API calls so the suite runs offline. Always run `source .venv/bin/activate/` before executing other code
+Lightweight local web chat UI (Flask) that lets a user converse with AI models from different providers (currently OpenAI & Gemini) and switch model/provider mid‑conversation. Persists chats/messages in a local SQLite database (`instance/omni_chat.db`). Exposes REST + SSE streaming endpoints; frontend is plain HTML/JS templates + tailwind. Tests fully mock external API calls so the suite runs offline. Always run `source .venv/bin/activate` before executing other code.
 
 ## 1.1 Main Files
 - app.py: primary file with all endpoints
 - chat.py: logic to do API calls / streaming
 - database.py: database logic (sqlite)
-- index.html: primary frontend file
-- providers.json: supported LLM providers/models and favorites
+- templates/index.html: primary frontend file
+- static/providers.json: supported LLM providers/models and favorites
 
 ## 2. Tech Stack & Footprint
 - Language: Python 3.12 (README says 3.10+, tests pass on 3.12.3). Venv in `.venv`
@@ -21,7 +21,6 @@ Lightweight local web chat UI (Flask) that lets a user converse with AI models f
 - Dev/Test deps: `requirements-dev.txt` (includes `-r requirements.txt` plus pytest, black, flake8, mypy, pytest-cov, pre-commit).
 - Size: Single small service (< 15 Python source/test modules). No compiled steps.
 
-
 ## 3. High-Confidence Command Recipes
 Always run these inside the project root with the virtual environment activated. Order matters where stated.
 
@@ -29,24 +28,23 @@ Always run these inside the project root with the virtual environment activated.
 Pick runtime-only or full dev setup.
 Runtime only (just to run the app):
 ```bash
-python3 -m venv .venv
+python3 -m venv .venv          # Takes ~3 seconds
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt  # Takes ~15-20 seconds
 ```
 Full dev (recommended for contributing):
 ```bash
-python3 -m venv .venv
+python3 -m venv .venv          # Takes ~3 seconds  
 source .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install -r requirements-dev.txt  # Takes ~30-40 seconds. NEVER CANCEL: Set timeout to 120+ seconds.
 ```
-Idempotent: re-running the same pip install is safe. Don’t upgrade packages arbitrarily; tests validated against current spec.
+Idempotent: re-running the same pip install is safe. Do not upgrade packages arbitrarily; tests validated against current spec.
 
 ### 3.2 Run Application (dev)
 Always activate the venv before running any commands.
 ```bash
 source .venv/bin/activate  # if not already
-python app.py
-# Visit http://127.0.0.1:5000
+python app.py              # Takes ~3 seconds to start. App runs on http://127.0.0.1:5000
 ```
 Optional: set API keys beforehand (see §6) or through UI settings.
 
@@ -55,25 +53,24 @@ Requires dev deps installed (`requirements-dev.txt`). Always activate the venv b
 ```bash
 source .venv/bin/activate
 pip install -r requirements-dev.txt  # safe if already installed
-pytest -q
+pytest -q                  # Takes ~3 seconds total. NEVER CANCEL: Set timeout to 60+ seconds for safety.
 ```
-All tests (62) should pass in ~1–2 seconds (observed: 1.33s). They create a temp SQLite DB & .env per test; no network calls. A failure usually signals interface drift—fix before commit.
+All tests (70) should pass in ~1 second (observed: 0.85s). They create a temp SQLite DB & .env per test; no network calls. A failure usually signals interface drift—fix before commit.
 
 ### 3.4 Lint / Format / Type Check (recommended before PRs)
 Install dev deps first. Then:
 ```bash
-black --check .
-mypy .
+black --check .            # Takes ~1 second. Use `black .` to auto-format
+mypy .                     # Takes ~15 seconds. NEVER CANCEL: Set timeout to 60+ seconds.
 ```
-Auto-format: `black .`
+Note: mypy currently shows some type errors in chat.py (OpenAI API overload variants). These are non-blocking - tests pass and app functions correctly.
 
 ### 3.5 Clean
 Safe cleanup targets:
 ```bash
-rm -rf __pycache__ tests/__pycache__ .pytest_cache .mypy_cache
-rm -f instance/omni_chat.db
+rm -rf __pycache__ tests/__pycache__ .pytest_cache .mypy_cache  # Takes <1 second
 ```
-Do NOT delete migrations (none exist) or source files. The DB will be recreated automatically on next app start. Never delete instance/omni_chat.db, this is the production database. Never modify the production database.
+WARNING: Do NOT delete `instance/omni_chat.db` unless you want to lose chat history. The DB will be recreated automatically on next app start but you'll lose all chats.
 
 ## 4. Architectural Layout
 Top-level Python modules (no packages):
@@ -124,13 +121,49 @@ Add linting/CI: create GitHub Actions workflow (e.g., run `pip install -r requir
 - Validation: maintain order & error messages: "message is required", "provider is required", "model is required" for missing inputs (tests assert exact strings).
 
 ## 10. Manual Validation Checklist (Pre-PR)
+**CRITICAL**: Always validate changes with complete user scenarios. Simply starting/stopping the app is NOT sufficient.
+
+### 10.1 Basic Commands Validation
 0. `source .venv/bin/activate` (always activate venv first)
-1. `pip install -r requirements-dev.txt` (or ensure already installed).
-2. `pytest -q` (expect all green: 62 tests).
-3. `mypy . && black --check .` (clean or fix).
-4. Run app: `python app.py` then test a chat (with or without keys—verify structured error if missing).
-5. Verify DB present or created (`instance/omni_chat.db`).
-6. If modifying schemas or providers, add/update tests reflecting new behavior.
+1. `pip install -r requirements-dev.txt` (or ensure already installed). **Timeout: 120+ seconds**
+2. `pytest -q` (expect all green: 70 tests). **Timeout: 60+ seconds**
+3. `mypy . && black --check .` (address format issues with `black .` first). **Timeout: 60+ seconds**
+4. Verify DB present or created (`instance/omni_chat.db`) after running app.
+
+### 10.2 Manual UI Testing (REQUIRED)
+**Always run these UI validation scenarios after making changes:**
+
+1. **Start Application**: `python app.py` - verify starts without errors
+2. **Load UI**: Navigate to http://127.0.0.1:5000 - verify page loads with:
+   - Provider/model selector dropdowns visible
+   - Chat input area present  
+   - History sidebar shows "No previous chats yet"
+3. **Test Missing API Key Flow**:
+   - Type a test message and send
+   - Verify error message appears: "[provider] API key not set"
+   - Verify settings modal opens automatically
+   - Take screenshot to verify UI state
+4. **Test Provider Switching**:
+   - Switch between OpenAI and Gemini providers
+   - Verify model dropdown updates correctly for each provider
+   - Verify model configuration panel updates with provider-specific parameters
+5. **Test Settings Modal**:
+   - Click settings button (⚙️)
+   - Verify API key input fields are present
+   - Test Close button functionality
+6. **Test Chat History**: 
+   - Verify new chat appears in sidebar after sending message
+   - Verify chat title updates properly
+
+### 10.3 Database Validation
+- Verify `instance/omni_chat.db` is created after first chat
+- Do NOT delete this file unless intentionally resetting chat history
+
+### 10.4 Screenshot Documentation
+When making UI changes, **always take screenshots** using browser automation to show:
+- Before and after states of changes
+- Error states (missing API keys, etc.)
+- New functionality working correctly
 
 ## 11. File Inventory (Root)
 - `app.py`, `chat.py`, `database.py`

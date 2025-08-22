@@ -272,10 +272,15 @@ Omni Chat
     const p = providers.find(x => x.id === providerEl.value);
     const models = p ? p.models : [];
     modelEl.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('') || '<option>No models</option>';
-    // If default model matches current provider select it
+    
+    // If default model matches current provider, select it
     if (defaultSelection.provider === providerEl.value && defaultSelection.model && models.includes(defaultSelection.model)) {
       modelEl.value = defaultSelection.model;
+    } else if (models.length > 0) {
+      // If no default match, select the first available model
+      modelEl.value = models[0];
     }
+    
     updateFavoriteStar();
   // Reload model parameter schema when model changes
   fetchModelConfig();
@@ -513,6 +518,19 @@ Omni Chat
     chatTitleEl.value = '';
     messagesEl.innerHTML = '';
     history = [];
+    
+    // Ensure provider and model are set to valid defaults
+    if (!providerEl.value || !modelEl.value) {
+      // Re-apply defaults or fallbacks
+      if (defaultSelection.provider && providers.some(p => p.id === defaultSelection.provider)) {
+        providerEl.value = defaultSelection.provider;
+        populateModels(); // This will set the model
+      } else if (providers.length > 0) {
+        providerEl.value = providers[0].id;
+        populateModels(); // This will set the model
+      }
+    }
+    
     appendMessage('assistant', 'New chat started. How can I help?');
   }
 

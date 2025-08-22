@@ -117,6 +117,31 @@ Omni Chat
   </div>
 </div>
 
+<!-- Blacklist Warning Modal -->
+<div id="blacklist-overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity z-50 flex items-center justify-center p-4">
+  <div id="blacklist-modal" class="w-full max-w-md bg-neutral-900 border border-red-400/30 rounded-2xl shadow-2xl ring-1 ring-black/60 opacity-0 scale-95 transition-all">
+    <div class="px-5 py-4 border-b border-red-400/20">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/20 text-red-400">
+          ⚠️
+        </span>
+        <h3 class="text-lg font-semibold text-red-300">Blacklisted Words Detected</h3>
+      </div>
+    </div>
+    <div class="p-5">
+      <p class="text-white/90 mb-3">Your message contains the following blacklisted words:</p>
+      <div id="detected-words" class="bg-red-500/10 border border-red-400/20 rounded-lg p-3 mb-4">
+        <!-- Detected words will be inserted here -->
+      </div>
+      <p class="text-white/70 text-sm">Are you sure you want to proceed with sending this message?</p>
+    </div>
+    <div class="px-5 py-4 border-t border-white/10 flex justify-end gap-3">
+      <button id="blacklist-cancel" class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white/80 hover:text-white transition">Cancel</button>
+      <button id="blacklist-proceed" class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium transition">Proceed Anyway</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const providerEl = document.getElementById('provider');
   const favoriteModelEl = document.getElementById('favorite-model');
@@ -139,16 +164,74 @@ Omni Chat
   const applyConfigBtn = document.getElementById('apply-config');
   const configBody = document.getElementById('config-body');
   const resetConfigBtn = document.getElementById('reset-config');
+  
+  // Blacklist modal elements
+  const blacklistOverlay = document.getElementById('blacklist-overlay');
+  const blacklistModal = document.getElementById('blacklist-modal');
+  const detectedWords = document.getElementById('detected-words');
+  const blacklistCancel = document.getElementById('blacklist-cancel');
+  const blacklistProceed = document.getElementById('blacklist-proceed');
 
   // In-memory current param values keyed by name
   let currentParams = {};
   let defaultParams = {};
+  let blacklistCache = [];
   function showToast(msg) {
     if (!msg) return;
     toastEl.textContent = msg;
     toastEl.classList.remove('hidden');
     clearTimeout(showToast._t);
     showToast._t = setTimeout(() => toastEl.classList.add('hidden'), 4000);
+  }
+
+  // Blacklist functions
+  async function loadBlacklist() {
+    try {
+      const res = await fetch('/api/blacklist');
+      if (res.ok) {
+        const data = await res.json();
+        blacklistCache = data.blacklist || [];
+      }
+    } catch (_) {}
+  }
+
+  function checkBlacklist(message) {
+    if (!blacklistCache.length) return [];
+    
+    const messageLower = message.toLowerCase();
+    const detectedWords = [];
+    
+    for (const word of blacklistCache) {
+      if (messageLower.includes(word.toLowerCase())) {
+        detectedWords.push(word);
+      }
+    }
+    
+    return detectedWords;
+  }
+
+  function showBlacklistModal(words) {
+    detectedWords.innerHTML = words.map(word => 
+      `<span class="inline-block bg-red-600/20 text-red-300 px-2 py-1 rounded text-sm mr-2 mb-1">${escapeHtml(word)}</span>`
+    ).join('');
+    
+    blacklistOverlay.classList.remove('pointer-events-none');
+    requestAnimationFrame(() => {
+      blacklistOverlay.classList.add('opacity-100');
+      blacklistModal.classList.add('opacity-100', 'scale-100');
+    });
+  }
+
+  function hideBlacklistModal() {
+    blacklistOverlay.classList.add('pointer-events-none');
+    blacklistOverlay.classList.remove('opacity-100');
+    blacklistModal.classList.remove('opacity-100', 'scale-100');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   let providers = [];
@@ -173,11 +256,15 @@ Omni Chat
       }
       populateModels();
       populateFavoritesDropdown();
+      // Also load blacklist cache
+      loadBlacklist();
     } catch (e) {
       // Fallback
       providers = [{ id: 'openai', name: 'OpenAI', models: ['gpt-4o-mini'] }];
       providerEl.innerHTML = `<option value="openai">OpenAI</option>`;
       populateModels();
+      // Still try to load blacklist on fallback
+      loadBlacklist();
     }
   }
 
@@ -462,6 +549,39 @@ Omni Chat
       return;
     }
     
+    // Check for blacklisted words
+    const detected = checkBlacklist(message);
+    if (detected.length > 0) {
+      console.log('[FRONTEND] Blacklisted words detected:', detected);
+      showBlacklistModal(detected);
+      
+      // Set up the modal event handlers for this specific submission
+      const handleProceed = () => {
+        hideBlacklistModal();
+        blacklistProceed.removeEventListener('click', handleProceed);
+        blacklistCancel.removeEventListener('click', handleCancel);
+        // Proceed with submission
+        submitMessage(message);
+      };
+      
+      const handleCancel = () => {
+        hideBlacklistModal();
+        blacklistProceed.removeEventListener('click', handleProceed);
+        blacklistCancel.removeEventListener('click', handleCancel);
+        // Restore the message to the input
+        inputEl.value = message;
+      };
+      
+      blacklistProceed.addEventListener('click', handleProceed);
+      blacklistCancel.addEventListener('click', handleCancel);
+      return;
+    }
+    
+    // No blacklisted words, proceed normally
+    submitMessage(message);
+  });
+
+  async function submitMessage(message) {
     isSubmitting = true; // Set flag to prevent duplicates
     inputEl.value = '';
     const provider = providerEl.value;
@@ -504,7 +624,7 @@ Omni Chat
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, params: currentParams })
+        body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, params: currentParams })
       });
 
       if (!response.ok) {
@@ -522,7 +642,7 @@ Omni Chat
         if (done) break;
         
         const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        const lines = chunk.split('\\n');
         
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -614,7 +734,7 @@ Omni Chat
       showToast('Provider call failed or API key missing. Open settings to configure.');
       isSubmitting = false; // Reset flag on error
     }
-  });
+  }
 
   inputEl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

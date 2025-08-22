@@ -55,6 +55,18 @@
       0%, 100% { opacity: 0.6; }
       50% { opacity: 1; }
     }
+    
+    /* Tab styling */
+    .tab-button {
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .tab-button.active {
+      background-color: rgba(59, 130, 246, 0.2);
+      color: rgb(147, 197, 253);
+    }
+    .tab-button:hover {
+      color: rgba(255, 255, 255, 0.8);
+    }
   </style>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
 </head>
@@ -77,28 +89,71 @@
   <!-- Settings Modal -->
   <div id="settings-modal" class="fixed inset-0 z-50 hidden">
     <div class="absolute inset-0 bg-black/60" data-close></div>
-    <div class="relative mx-auto mt-24 w-11/12 max-w-md rounded-xl border border-white/10 bg-slate-900 p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg font-semibold">API Keys</h2>
+    <div class="relative mx-auto mt-16 w-11/12 max-w-lg rounded-xl border border-white/10 bg-slate-900">
+      <div class="flex items-center justify-between p-4 pb-0">
+        <h2 class="text-lg font-semibold">Settings</h2>
         <button class="text-white/70 hover:text-white" data-close>✖</button>
       </div>
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm text-white/70 mb-1">OpenAI API Key</label>
-          <input id="key-openai" type="password" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="sk-..." />
-        </div>
-        <div>
-          <label class="block text-sm text-white/70 mb-1">Gemini API Key</label>
-          <input id="key-gemini" type="password" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="..." />
+      
+      <!-- Tabs -->
+      <div class="px-4 pt-3">
+        <div class="flex space-x-1 bg-white/5 rounded-lg p-1">
+          <button id="tab-keys" class="tab-button flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all active">
+            🔑 API Keys
+          </button>
+          <button id="tab-blacklist" class="tab-button flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all">
+            🚫 Blacklist
+          </button>
         </div>
       </div>
-      <div class="mt-4 flex items-center justify-between">
-        <div class="space-x-2">
-          <button id="delete-openai" class="rounded-lg bg-red-600 hover:bg-red-500 px-3 py-2 text-sm">Delete OpenAI</button>
-          <button id="delete-gemini" class="rounded-lg bg-red-600 hover:bg-red-500 px-3 py-2 text-sm">Delete Gemini</button>
+
+      <!-- Tab Content -->
+      <div class="p-4">
+        <!-- API Keys Tab -->
+        <div id="content-keys" class="tab-content">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm text-white/70 mb-1">OpenAI API Key</label>
+              <input id="key-openai" type="password" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="sk-..." />
+            </div>
+            <div>
+              <label class="block text-sm text-white/70 mb-1">Gemini API Key</label>
+              <input id="key-gemini" type="password" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="..." />
+            </div>
+          </div>
+          <div class="mt-4 flex items-center justify-between">
+            <div class="space-x-2">
+              <button id="delete-openai" class="rounded-lg bg-red-600 hover:bg-red-500 px-3 py-2 text-sm">Delete OpenAI</button>
+              <button id="delete-gemini" class="rounded-lg bg-red-600 hover:bg-red-500 px-3 py-2 text-sm">Delete Gemini</button>
+            </div>
+            <div class="space-x-2">
+              <button id="save-keys" class="rounded-lg bg-primary-600 hover:bg-primary-500 px-4 py-2 text-sm">Save</button>
+            </div>
+          </div>
         </div>
-        <div class="space-x-2">
-          <button id="save-keys" class="rounded-lg bg-primary-600 hover:bg-primary-500 px-4 py-2 text-sm">Save</button>
+
+        <!-- Blacklist Tab -->
+        <div id="content-blacklist" class="tab-content hidden">
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm text-white/70 mb-1">Add Blacklisted Words</label>
+              <p class="text-xs text-white/50 mb-2">Enter words that should trigger a warning before sending messages</p>
+              <div class="flex space-x-2">
+                <input id="blacklist-input" type="text" class="flex-1 rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="Enter a word..." />
+                <button id="add-blacklist" class="rounded-lg bg-primary-600 hover:bg-primary-500 px-4 py-2 text-sm">Add</button>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm text-white/70 mb-2">Current Blacklist</label>
+              <div id="blacklist-words" class="space-y-1 max-h-32 overflow-y-auto">
+                <p class="text-xs text-white/50">No blacklisted words</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-4 pt-4 border-t border-white/10 text-right">
           <button class="rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm" data-close>Close</button>
         </div>
       </div>
@@ -106,49 +161,152 @@
   </div>
   <script>
   const settingsBtn = document.getElementById('settings-btn');
-    const modal = document.getElementById('settings-modal');
-    const openaiInput = document.getElementById('key-openai');
-    const geminiInput = document.getElementById('key-gemini');
-    const saveBtn = document.getElementById('save-keys');
-    const delOpenai = document.getElementById('delete-openai');
-    const delGemini = document.getElementById('delete-gemini');
+  const modal = document.getElementById('settings-modal');
+  const openaiInput = document.getElementById('key-openai');
+  const geminiInput = document.getElementById('key-gemini');
+  const saveBtn = document.getElementById('save-keys');
+  const delOpenai = document.getElementById('delete-openai');
+  const delGemini = document.getElementById('delete-gemini');
+  
+  // Tab elements
+  const tabKeys = document.getElementById('tab-keys');
+  const tabBlacklist = document.getElementById('tab-blacklist');
+  const contentKeys = document.getElementById('content-keys');
+  const contentBlacklist = document.getElementById('content-blacklist');
+  
+  // Blacklist elements
+  const blacklistInput = document.getElementById('blacklist-input');
+  const addBlacklistBtn = document.getElementById('add-blacklist');
+  const blacklistWords = document.getElementById('blacklist-words');
+
+  // Tab switching
+  function switchToTab(tab) {
+    // Update tab buttons
+    document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+    
+    if (tab === 'keys') {
+      tabKeys.classList.add('active');
+      contentKeys.classList.remove('hidden');
+    } else if (tab === 'blacklist') {
+      tabBlacklist.classList.add('active');
+      contentBlacklist.classList.remove('hidden');
+    }
+  }
+
+  tabKeys.addEventListener('click', () => switchToTab('keys'));
+  tabBlacklist.addEventListener('click', () => switchToTab('blacklist'));
 
   async function loadKeys() {
-      try {
-        const r = await fetch('/api/keys');
-        if (!r.ok) return;
+    try {
+      const r = await fetch('/api/keys');
+      if (!r.ok) return;
+      const data = await r.json();
+      openaiInput.value = data.openai || '';
+      geminiInput.value = data.gemini || '';
+    } catch (_) {}
+  }
+
+  async function loadBlacklist() {
+    try {
+      const r = await fetch('/api/blacklist');
+      if (!r.ok) return;
+      const data = await r.json();
+      renderBlacklist(data.blacklist || []);
+    } catch (_) {}
+  }
+
+  function renderBlacklist(words) {
+    if (words.length === 0) {
+      blacklistWords.innerHTML = '<p class="text-xs text-white/50">No blacklisted words</p>';
+      return;
+    }
+    
+    blacklistWords.innerHTML = words.map(word => `
+      <div class="flex items-center justify-between bg-white/5 rounded px-2 py-1">
+        <span class="text-sm">${escapeHtml(word)}</span>
+        <button class="text-red-400 hover:text-red-300 text-xs" onclick="removeBlacklistWord('${escapeHtml(word)}')">Remove</button>
+      </div>
+    `).join('');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  async function addBlacklistWord() {
+    const word = blacklistInput.value.trim();
+    if (!word) return;
+    
+    try {
+      const r = await fetch('/api/blacklist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ word })
+      });
+      if (r.ok) {
         const data = await r.json();
-        openaiInput.value = data.openai || '';
-        geminiInput.value = data.gemini || '';
-  // No pulsing per request; simply prefill values
-      } catch (_) {}
-    }
+        renderBlacklist(data.blacklist);
+        blacklistInput.value = '';
+      }
+    } catch (_) {}
+  }
 
-    function openModal() {
-      modal.classList.remove('hidden');
+  async function removeBlacklistWord(word) {
+    try {
+      const r = await fetch(`/api/blacklist?word=${encodeURIComponent(word)}`, {
+        method: 'DELETE'
+      });
+      if (r.ok) {
+        const data = await r.json();
+        renderBlacklist(data.blacklist);
+      }
+    } catch (_) {}
+  }
+
+  // Make removeBlacklistWord available globally for onclick handlers
+  window.removeBlacklistWord = removeBlacklistWord;
+
+  function openModal() {
+    modal.classList.remove('hidden');
+    loadKeys();
+    loadBlacklist();
+  }
+
+  function closeModal() {
+    modal.classList.add('hidden');
+  }
+
+  settingsBtn?.addEventListener('click', openModal);
+  modal?.querySelectorAll('[data-close]')?.forEach(btn => btn.addEventListener('click', closeModal));
+
+  saveBtn?.addEventListener('click', async () => {
+    const body = { openai: openaiInput.value.trim(), gemini: geminiInput.value.trim() };
+    try {
+      await fetch('/api/keys', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      closeModal();
       loadKeys();
-    }
-    function closeModal() {
-      modal.classList.add('hidden');
-    }
+    } catch (_) {}
+  });
+  
+  delOpenai?.addEventListener('click', async () => {
+    try { await fetch('/api/keys/openai', { method: 'DELETE' }); openaiInput.value=''; loadKeys(); } catch (_) {}
+  });
+  
+  delGemini?.addEventListener('click', async () => {
+    try { await fetch('/api/keys/gemini', { method: 'DELETE' }); geminiInput.value=''; loadKeys(); } catch (_) {}
+  });
 
-    settingsBtn?.addEventListener('click', openModal);
-    modal?.querySelectorAll('[data-close]')?.forEach(btn => btn.addEventListener('click', closeModal));
-
-    saveBtn?.addEventListener('click', async () => {
-      const body = { openai: openaiInput.value.trim(), gemini: geminiInput.value.trim() };
-      try {
-        await fetch('/api/keys', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        closeModal();
-        loadKeys();
-      } catch (_) {}
-    });
-    delOpenai?.addEventListener('click', async () => {
-      try { await fetch('/api/keys/openai', { method: 'DELETE' }); openaiInput.value=''; loadKeys(); } catch (_) {}
-    });
-    delGemini?.addEventListener('click', async () => {
-      try { await fetch('/api/keys/gemini', { method: 'DELETE' }); geminiInput.value=''; loadKeys(); } catch (_) {}
-    });
+  // Blacklist functionality
+  addBlacklistBtn?.addEventListener('click', addBlacklistWord);
+  blacklistInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      addBlacklistWord();
+    }
+  });
   </script>
 </body>
 </html>

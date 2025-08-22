@@ -587,6 +587,40 @@ def create_app() -> Flask:
         _write_providers_json(data)
         return jsonify({"ok": True, "favorites": favs})
 
+    # Blacklist management --------------------------------------------------
+    @app.get("/api/blacklist")
+    def api_get_blacklist():
+        """Get current blacklisted words."""
+        data = _load_providers_json()
+        return jsonify({"blacklist": data.get("blacklist", [])})
+
+    @app.post("/api/blacklist")
+    def api_add_blacklist_word():
+        """Add a word to the blacklist."""
+        body = request.get_json(silent=True) or {}
+        word = (body.get("word") or "").strip().lower()
+        if not word:
+            return jsonify({"error": "word is required"}), 400
+        data = _load_providers_json()
+        blacklist = data.setdefault("blacklist", [])
+        if word not in blacklist:
+            blacklist.append(word)
+        _write_providers_json(data)
+        return jsonify({"ok": True, "blacklist": blacklist})
+
+    @app.delete("/api/blacklist")
+    def api_remove_blacklist_word():
+        """Remove a word from the blacklist."""
+        word = (request.args.get("word") or "").strip().lower()
+        if not word:
+            return jsonify({"error": "word is required"}), 400
+        data = _load_providers_json()
+        blacklist = data.setdefault("blacklist", [])
+        if word in blacklist:
+            blacklist.remove(word)
+        _write_providers_json(data)
+        return jsonify({"ok": True, "blacklist": blacklist})
+
     @app.put("/api/default-model")
     def api_set_default_model():
         body = request.get_json(silent=True) or {}

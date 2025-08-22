@@ -15,13 +15,17 @@ def test_get_initial_favorites(client):
 
 def test_add_and_remove_favorite_round_trip(client):
     # Add a favorite (choose one known from providers.json)
-    add = client.post("/api/favorites", json={"provider": "openai", "model": "gpt-4o-mini"})
+    add = client.post(
+        "/api/favorites", json={"provider": "openai", "model": "gpt-4o-mini"}
+    )
     assert add.status_code == 200
     favs = add.get_json()["favorites"]
     assert "openai:gpt-4o-mini" in favs
 
     # Idempotent add
-    add2 = client.post("/api/favorites", json={"provider": "openai", "model": "gpt-4o-mini"})
+    add2 = client.post(
+        "/api/favorites", json={"provider": "openai", "model": "gpt-4o-mini"}
+    )
     assert add2.status_code == 200
     favs2 = add2.get_json()["favorites"]
     assert favs2.count("openai:gpt-4o-mini") == 1
@@ -50,13 +54,17 @@ def test_remove_favorite_missing_params(client):
 
 
 def test_add_favorite_unknown_model(client):
-    r = client.post("/api/favorites", json={"provider": "openai", "model": "no-such-model"})
+    r = client.post(
+        "/api/favorites", json={"provider": "openai", "model": "no-such-model"}
+    )
     assert r.status_code == 400
     assert r.get_json()["error"] == "unknown provider/model"
 
 
 def test_set_default_model_flow(client):
-    r = client.put("/api/default-model", json={"provider": "openai", "model": "gpt-4o-mini"})
+    r = client.put(
+        "/api/default-model", json={"provider": "openai", "model": "gpt-4o-mini"}
+    )
     assert r.status_code == 200
     body = r.get_json()
     assert body["ok"] is True
@@ -69,7 +77,9 @@ def test_set_default_model_flow(client):
 
 
 def test_set_default_model_invalid(client):
-    r = client.put("/api/default-model", json={"provider": "openai", "model": "does-not-exist"})
+    r = client.put(
+        "/api/default-model", json={"provider": "openai", "model": "does-not-exist"}
+    )
     assert r.status_code == 400
     assert r.get_json()["error"] == "unknown provider/model"
 

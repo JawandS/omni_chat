@@ -90,26 +90,32 @@ def _get_api_key(provider: str) -> str:
 
 def is_ollama_available() -> bool:
     """Check if Ollama is installed and available on the system.
-    
+
     Returns:
         True if ollama command is available, False otherwise.
     """
     try:
-        subprocess.run(["ollama", "--version"], capture_output=True, check=True, timeout=5)
+        subprocess.run(
+            ["ollama", "--version"], capture_output=True, check=True, timeout=5
+        )
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+    ):
         return False
 
 
 def is_ollama_server_running() -> bool:
     """Check if Ollama server is running.
-    
+
     Returns:
         True if server is running, False otherwise.
     """
     if requests is None:
         return False
-        
+
     try:
         response = requests.get("http://localhost:11434/api/tags", timeout=15)
         return response.status_code == 200
@@ -119,19 +125,21 @@ def is_ollama_server_running() -> bool:
 
 def start_ollama_server() -> bool:
     """Start Ollama server if it's not running.
-    
+
     Returns:
         True if server was started or already running, False on error.
     """
     if is_ollama_server_running():
         return True
-        
+
     if not is_ollama_available():
         return False
-        
+
     try:
         # Start ollama serve in background
-        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            ["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         # Wait a moment for server to start
         time.sleep(2)
         # Check if it's running now
@@ -142,13 +150,13 @@ def start_ollama_server() -> bool:
 
 def get_ollama_models() -> List[str]:
     """Get list of available Ollama models.
-    
+
     Returns:
         List of model names, empty if Ollama is not available.
     """
     if requests is None or not is_ollama_server_running():
         return []
-        
+
     try:
         response = requests.get("http://localhost:11434/api/tags", timeout=10)
         if response.status_code == 200:
@@ -330,10 +338,10 @@ def _openai_call_stream(
         token_count = 0
         for chunk in stream:
             # Guard for union types or unexpected tuple outputs in newer SDKs
-            if hasattr(chunk, 'choices') and getattr(chunk, 'choices'):
-                first_choice = getattr(chunk, 'choices')[0]
-                delta = getattr(first_choice, 'delta', None)
-                content_piece = getattr(delta, 'content', None) if delta else None
+            if hasattr(chunk, "choices") and getattr(chunk, "choices"):
+                first_choice = getattr(chunk, "choices")[0]
+                delta = getattr(first_choice, "delta", None)
+                content_piece = getattr(delta, "content", None) if delta else None
                 if content_piece:
                     token_count += 1
                     logger.info(f"[OPENAI] Token {token_count}: '{content_piece}'")
@@ -390,7 +398,9 @@ def _gemini_call(
     allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
     generation_config = {k: params[k] for k in allowed if k in params}
     # web_search boolean could be toggled via safety_settings or tools in real API; placeholder ignore
-    model_obj = genai.GenerativeModel(model, generation_config=generation_config or None)
+    model_obj = genai.GenerativeModel(
+        model, generation_config=generation_config or None
+    )
 
     # Start a new chat with prior history and send the latest message
     chat = model_obj.start_chat(history=cast(Any, chat_history))  # type: ignore[arg-type]
@@ -454,7 +464,7 @@ def _ollama_call(
 
     messages = _format_history_for_ollama(history, message)
     params = params or {}
-    
+
     # Map common parameters to Ollama format
     options = {}
     if "temperature" in params:
@@ -476,9 +486,7 @@ def _ollama_call(
 
     try:
         response = requests.post(
-            "http://localhost:11434/api/chat",
-            json=payload,
-            timeout=60
+            "http://localhost:11434/api/chat", json=payload, timeout=60
         )
         if response.status_code == 200:
             data = response.json()
@@ -510,7 +518,7 @@ def _ollama_call_stream(
 
     messages = _format_history_for_ollama(history, message)
     params = params or {}
-    
+
     # Map common parameters to Ollama format
     options = {}
     if "temperature" in params:
@@ -532,17 +540,15 @@ def _ollama_call_stream(
 
     try:
         response = requests.post(
-            "http://localhost:11434/api/chat",
-            json=payload,
-            stream=True,
-            timeout=60
+            "http://localhost:11434/api/chat", json=payload, stream=True, timeout=60
         )
         if response.status_code == 200:
             for line in response.iter_lines():
                 if line:
                     try:
-                        data = line.decode('utf-8')
+                        data = line.decode("utf-8")
                         import json
+
                         chunk = json.loads(data)
                         if "message" in chunk and "content" in chunk["message"]:
                             content = chunk["message"]["content"]
@@ -581,7 +587,9 @@ def _gemini_call_stream(
     params = params or {}
     allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
     generation_config = {k: params[k] for k in allowed if k in params}
-    model_obj = genai.GenerativeModel(model, generation_config=generation_config or None)
+    model_obj = genai.GenerativeModel(
+        model, generation_config=generation_config or None
+    )
     chat = model_obj.start_chat(history=cast(Any, chat_history))  # type: ignore[arg-type]
 
     # Stream the response
@@ -672,7 +680,9 @@ def generate_reply(
         try:
             if not is_ollama_server_running():
                 return ChatReply(
-                    reply="", error="Ollama server not running", missing_key_for="ollama"
+                    reply="",
+                    error="Ollama server not running",
+                    missing_key_for="ollama",
                 )
             content = _ollama_call(model, history, message, params=params)
             if content:

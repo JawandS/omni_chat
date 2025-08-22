@@ -18,8 +18,11 @@ def client(tmp_path):
     providers_src = Path(ROOT / "static" / "providers.json")
     providers_dst = tmp_path / "providers.json"
     if providers_src.exists():
-        providers_dst.write_text(providers_src.read_text(encoding="utf-8"), encoding="utf-8")
+        providers_dst.write_text(
+            providers_src.read_text(encoding="utf-8"), encoding="utf-8"
+        )
     import os
+
     os.environ["PROVIDERS_JSON_PATH"] = str(providers_dst)
 
     app = create_app()

@@ -23,7 +23,13 @@ from database import (
     update_chat as db_update_chat,
     delete_chat,
 )
-from chat import generate_reply, generate_reply_stream, is_ollama_available, start_ollama_server, get_ollama_models
+from chat import (
+    generate_reply,
+    generate_reply_stream,
+    is_ollama_available,
+    start_ollama_server,
+    get_ollama_models,
+)
 
 
 def _validate_chat_request(data: dict) -> tuple[str, list[dict[str, str]]]:
@@ -33,7 +39,7 @@ def _validate_chat_request(data: dict) -> tuple[str, list[dict[str, str]]]:
         data: Request JSON data.
 
     Returns:
-        Tuple of (message, models_list) where models_list is a list of 
+        Tuple of (message, models_list) where models_list is a list of
         {'provider': str, 'model': str} dictionaries.
 
     Raises:
@@ -45,26 +51,26 @@ def _validate_chat_request(data: dict) -> tuple[str, list[dict[str, str]]]:
 
     # Support both single model (backward compatibility) and multiple models
     models_list = []
-    
+
     # Check for new multi-model format
     if "models" in data and isinstance(data["models"], list):
         if not data["models"]:
             raise ValueError("models list cannot be empty")
-        
+
         for i, model_config in enumerate(data["models"]):
             if not isinstance(model_config, dict):
                 raise ValueError(f"models[{i}] must be an object")
-            
+
             provider = (model_config.get("provider") or "").strip()
             if not provider:
                 raise ValueError(f"models[{i}].provider is required")
-            
+
             model = (model_config.get("model") or "").strip()
             if not model:
                 raise ValueError(f"models[{i}].model is required")
-            
+
             models_list.append({"provider": provider, "model": model})
-    
+
     # Fall back to single model format for backward compatibility
     elif "provider" in data or "model" in data:
         provider = (data.get("provider") or "").strip()
@@ -74,11 +80,13 @@ def _validate_chat_request(data: dict) -> tuple[str, list[dict[str, str]]]:
         model = (data.get("model") or "").strip()
         if not model:
             raise ValueError("model is required")
-        
+
         models_list.append({"provider": provider, "model": model})
-    
+
     else:
-        raise ValueError("either 'models' array or 'provider'/'model' fields are required")
+        raise ValueError(
+            "either 'models' array or 'provider'/'model' fields are required"
+        )
 
     return message, models_list
 
@@ -183,26 +191,34 @@ def create_app() -> Flask:
 
             # Save user message with first model info
             insert_message(
-                chat_id, "user", message, now, 
-                provider=first_model["provider"], model=first_model["model"]
+                chat_id,
+                "user",
+                message,
+                now,
+                provider=first_model["provider"],
+                model=first_model["model"],
             )
             logger.info(f"[NON-STREAMING] Saved user message to chat {chat_id}")
 
             # Generate and save assistant replies for each model
             history = data.get("history") or []
             params = data.get("params") or {}
-            
+
             all_replies = []
             combined_reply = ""
-            
+
             for i, model_config in enumerate(models_list):
                 provider = model_config["provider"]
                 model = model_config["model"]
-                
-                logger.info(f"[NON-STREAMING] Generating reply {i+1}/{len(models_list)} with {provider}/{model}")
-                
-                reply_obj = generate_reply(provider, model, message, history, params=params)
-                
+
+                logger.info(
+                    f"[NON-STREAMING] Generating reply {i+1}/{len(models_list)} with {provider}/{model}"
+                )
+
+                reply_obj = generate_reply(
+                    provider, model, message, history, params=params
+                )
+
                 # Format the reply with model info for multi-model requests
                 if len(models_list) > 1:
                     model_header = f"## {provider}/{model}\n\n"
@@ -211,16 +227,18 @@ def create_app() -> Flask:
                         formatted_reply += "\n\n---\n\n"
                 else:
                     formatted_reply = reply_obj.reply
-                
+
                 combined_reply += formatted_reply
-                all_replies.append({
-                    "provider": provider,
-                    "model": model,
-                    "reply": reply_obj.reply,
-                    "warning": reply_obj.warning,
-                    "error": reply_obj.error,
-                    "missing_key_for": reply_obj.missing_key_for
-                })
+                all_replies.append(
+                    {
+                        "provider": provider,
+                        "model": model,
+                        "reply": reply_obj.reply,
+                        "warning": reply_obj.warning,
+                        "error": reply_obj.error,
+                        "missing_key_for": reply_obj.missing_key_for,
+                    }
+                )
 
             # Save the combined reply to database
             insert_message(
@@ -231,7 +249,9 @@ def create_app() -> Flask:
                 provider=first_model["provider"],
                 model=first_model["model"],
             )
-            logger.info(f"[NON-STREAMING] Saved combined assistant reply to chat {chat_id}")
+            logger.info(
+                f"[NON-STREAMING] Saved combined assistant reply to chat {chat_id}"
+            )
 
             # Update chat timestamp and commit
             touch_chat(chat_id, now)
@@ -244,12 +264,14 @@ def create_app() -> Flask:
                 "chat_id": chat_id,
                 "title": title or None,
             }
-            
+
             # Aggregate warnings and errors from all models
             warnings = [r["warning"] for r in all_replies if r["warning"]]
             errors = [r["error"] for r in all_replies if r["error"]]
-            missing_keys = [r["missing_key_for"] for r in all_replies if r["missing_key_for"]]
-            
+            missing_keys = [
+                r["missing_key_for"] for r in all_replies if r["missing_key_for"]
+            ]
+
             if warnings:
                 response_data["warning"] = "; ".join(warnings)
             if errors:
@@ -305,15 +327,23 @@ def create_app() -> Flask:
             # Use first model for chat metadata
             first_model = models_list[0]
             chat_id = _create_or_update_chat(
-                chat_id, title, first_model["provider"], first_model["model"], request_ts
+                chat_id,
+                title,
+                first_model["provider"],
+                first_model["model"],
+                request_ts,
             )
             commit()
 
             # Save user message with first model info
             user_msg_ts = datetime.now(UTC).isoformat()
             insert_message(
-                chat_id, "user", message, user_msg_ts, 
-                provider=first_model["provider"], model=first_model["model"]
+                chat_id,
+                "user",
+                message,
+                user_msg_ts,
+                provider=first_model["provider"],
+                model=first_model["model"],
             )
             # Touch chat so it appears/updates in history sidebar right after the user sends a message
             touch_chat(chat_id, user_msg_ts)
@@ -336,20 +366,22 @@ def create_app() -> Flask:
                     for model_index, model_config in enumerate(models_list):
                         provider = model_config["provider"]
                         model = model_config["model"]
-                        
-                        logger.info(f"[STREAMING] Generating reply {model_index+1}/{len(models_list)} with {provider}/{model}")
-                        
+
+                        logger.info(
+                            f"[STREAMING] Generating reply {model_index+1}/{len(models_list)} with {provider}/{model}"
+                        )
+
                         # Send model start metadata
                         yield f"data: {json.dumps({'type': 'model_start', 'model_index': model_index, 'provider': provider, 'model': model})}\n\n"
-                        
+
                         # Add model header for multi-model requests
                         if len(models_list) > 1:
                             model_header = f"## {provider}/{model}\n\n"
                             combined_reply += model_header
                             yield f"data: {json.dumps({'type': 'token', 'token': model_header})}\n\n"
-                        
+
                         model_reply = ""
-                        
+
                         # Generate streaming reply for this model
                         for chunk in generate_reply_stream(
                             provider, model, message, history, params=params
@@ -364,10 +396,10 @@ def create_app() -> Flask:
                                 break
                             elif chunk.warning:
                                 yield f"data: {json.dumps({'type': 'warning', 'warning': chunk.warning, 'model_index': model_index})}\n\n"
-                        
+
                         # Send model end metadata and separator
                         yield f"data: {json.dumps({'type': 'model_end', 'model_index': model_index})}\n\n"
-                        
+
                         # Add separator between models (except for the last one)
                         if model_index < len(models_list) - 1:
                             separator = "\n\n---\n\n"
@@ -646,9 +678,17 @@ def create_app() -> Flask:
             with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
-            return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+            return {
+                "providers": [],
+                "favorites": [],
+                "default": {"provider": None, "model": None},
+            }
         except Exception:
-            return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+            return {
+                "providers": [],
+                "favorites": [],
+                "default": {"provider": None, "model": None},
+            }
 
     def _write_providers_json(data: dict) -> None:
         os.makedirs(os.path.dirname(PROVIDERS_JSON_PATH), exist_ok=True)
@@ -667,10 +707,9 @@ def create_app() -> Flask:
     @app.get("/api/favorites")
     def api_get_favorites():
         data = _load_providers_json()
-        return jsonify({
-            "favorites": data.get("favorites", []),
-            "default": data.get("default", {})
-        })
+        return jsonify(
+            {"favorites": data.get("favorites", []), "default": data.get("default", {})}
+        )
 
     @app.post("/api/favorites")
     def api_add_favorite():
@@ -750,47 +789,229 @@ def create_app() -> Flask:
         if provider == "openai":
             # Reasoning models (o3*) allow reasoning_effort; others standard chat params
             base = [
-                {"name": "temperature", "type": "number", "min": 0, "max": 2, "step": 0.01, "default": 1.0, "label": "Temperature"},
-                {"name": "top_p", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 1.0, "label": "Top P"},
-                {"name": "max_tokens", "type": "integer", "min": 1, "max": 8192, "step": 1, "default": 2048, "label": "Max Tokens"},
-                {"name": "presence_penalty", "type": "number", "min": -2, "max": 2, "step": 0.01, "default": 0.0, "label": "Presence Penalty"},
-                {"name": "frequency_penalty", "type": "number", "min": -2, "max": 2, "step": 0.01, "default": 0.0, "label": "Frequency Penalty"},
+                {
+                    "name": "temperature",
+                    "type": "number",
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.01,
+                    "default": 1.0,
+                    "label": "Temperature",
+                },
+                {
+                    "name": "top_p",
+                    "type": "number",
+                    "min": 0,
+                    "max": 1,
+                    "step": 0.01,
+                    "default": 1.0,
+                    "label": "Top P",
+                },
+                {
+                    "name": "max_tokens",
+                    "type": "integer",
+                    "min": 1,
+                    "max": 8192,
+                    "step": 1,
+                    "default": 2048,
+                    "label": "Max Tokens",
+                },
+                {
+                    "name": "presence_penalty",
+                    "type": "number",
+                    "min": -2,
+                    "max": 2,
+                    "step": 0.01,
+                    "default": 0.0,
+                    "label": "Presence Penalty",
+                },
+                {
+                    "name": "frequency_penalty",
+                    "type": "number",
+                    "min": -2,
+                    "max": 2,
+                    "step": 0.01,
+                    "default": 0.0,
+                    "label": "Frequency Penalty",
+                },
             ]
             # Additional advanced params (exposed only for GPT-5 family to reduce clutter elsewhere)
             if model.lower().startswith("gpt-5"):
-                base.extend([
-                    {"name": "seed", "type": "integer", "min": 0, "max": 2147483647, "step": 1, "default": 0, "label": "Seed"},
-                    {"name": "stop", "type": "string", "default": "", "label": "Stop Sequences (comma)"},
-                    {"name": "response_format", "type": "select", "options": ["text", "json_object"], "default": "text", "label": "Response Format"},
-                    {"name": "thinking", "type": "select", "options": ["none", "light", "deep"], "default": "none", "label": "Thinking Mode"},
-                    {"name": "thinking_budget_tokens", "type": "integer", "min": 32, "max": 8192, "step": 1, "default": 512, "label": "Thinking Budget"},
-                ])
+                base.extend(
+                    [
+                        {
+                            "name": "seed",
+                            "type": "integer",
+                            "min": 0,
+                            "max": 2147483647,
+                            "step": 1,
+                            "default": 0,
+                            "label": "Seed",
+                        },
+                        {
+                            "name": "stop",
+                            "type": "string",
+                            "default": "",
+                            "label": "Stop Sequences (comma)",
+                        },
+                        {
+                            "name": "response_format",
+                            "type": "select",
+                            "options": ["text", "json_object"],
+                            "default": "text",
+                            "label": "Response Format",
+                        },
+                        {
+                            "name": "thinking",
+                            "type": "select",
+                            "options": ["none", "light", "deep"],
+                            "default": "none",
+                            "label": "Thinking Mode",
+                        },
+                        {
+                            "name": "thinking_budget_tokens",
+                            "type": "integer",
+                            "min": 32,
+                            "max": 8192,
+                            "step": 1,
+                            "default": 512,
+                            "label": "Thinking Budget",
+                        },
+                    ]
+                )
             if model.lower().startswith("o3"):
-                base.append({
-                    "name": "reasoning_effort", "type": "select", "options": ["low", "medium", "high"], "default": "low", "label": "Reasoning Effort"
-                })
+                base.append(
+                    {
+                        "name": "reasoning_effort",
+                        "type": "select",
+                        "options": ["low", "medium", "high"],
+                        "default": "low",
+                        "label": "Reasoning Effort",
+                    }
+                )
             params = base
         elif provider == "gemini":
             params = [
-                {"name": "temperature", "type": "number", "min": 0, "max": 2, "step": 0.01, "default": 1.0, "label": "Temperature"},
-                {"name": "top_p", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 1.0, "label": "Top P"},
-                {"name": "top_k", "type": "integer", "min": 1, "max": 100, "step": 1, "default": 40, "label": "Top K"},
-                {"name": "max_output_tokens", "type": "integer", "min": 16, "max": 8192, "step": 1, "default": 1024, "label": "Max Output Tokens"},
-                {"name": "web_search", "type": "boolean", "default": False, "label": "Web Search"},
+                {
+                    "name": "temperature",
+                    "type": "number",
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.01,
+                    "default": 1.0,
+                    "label": "Temperature",
+                },
+                {
+                    "name": "top_p",
+                    "type": "number",
+                    "min": 0,
+                    "max": 1,
+                    "step": 0.01,
+                    "default": 1.0,
+                    "label": "Top P",
+                },
+                {
+                    "name": "top_k",
+                    "type": "integer",
+                    "min": 1,
+                    "max": 100,
+                    "step": 1,
+                    "default": 40,
+                    "label": "Top K",
+                },
+                {
+                    "name": "max_output_tokens",
+                    "type": "integer",
+                    "min": 16,
+                    "max": 8192,
+                    "step": 1,
+                    "default": 1024,
+                    "label": "Max Output Tokens",
+                },
+                {
+                    "name": "web_search",
+                    "type": "boolean",
+                    "default": False,
+                    "label": "Web Search",
+                },
             ]
         elif provider == "ollama":
             params = [
-                {"name": "temperature", "type": "number", "min": 0, "max": 2, "step": 0.01, "default": 0.8, "label": "Temperature"},
-                {"name": "top_p", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.9, "label": "Top P"},
-                {"name": "top_k", "type": "integer", "min": 1, "max": 100, "step": 1, "default": 40, "label": "Top K"},
-                {"name": "max_tokens", "type": "integer", "min": 1, "max": 8192, "step": 1, "default": 2048, "label": "Max Tokens"},
+                {
+                    "name": "temperature",
+                    "type": "number",
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.01,
+                    "default": 0.8,
+                    "label": "Temperature",
+                },
+                {
+                    "name": "top_p",
+                    "type": "number",
+                    "min": 0,
+                    "max": 1,
+                    "step": 0.01,
+                    "default": 0.9,
+                    "label": "Top P",
+                },
+                {
+                    "name": "top_k",
+                    "type": "integer",
+                    "min": 1,
+                    "max": 100,
+                    "step": 1,
+                    "default": 40,
+                    "label": "Top K",
+                },
+                {
+                    "name": "max_tokens",
+                    "type": "integer",
+                    "min": 1,
+                    "max": 8192,
+                    "step": 1,
+                    "default": 2048,
+                    "label": "Max Tokens",
+                },
             ]
         elif provider == "ollama":
             params = [
-                {"name": "temperature", "type": "number", "min": 0, "max": 2, "step": 0.01, "default": 0.8, "label": "Temperature"},
-                {"name": "top_p", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.9, "label": "Top P"},
-                {"name": "top_k", "type": "integer", "min": 1, "max": 100, "step": 1, "default": 40, "label": "Top K"},
-                {"name": "max_tokens", "type": "integer", "min": 1, "max": 8192, "step": 1, "default": 2048, "label": "Max Tokens"},
+                {
+                    "name": "temperature",
+                    "type": "number",
+                    "min": 0,
+                    "max": 2,
+                    "step": 0.01,
+                    "default": 0.8,
+                    "label": "Temperature",
+                },
+                {
+                    "name": "top_p",
+                    "type": "number",
+                    "min": 0,
+                    "max": 1,
+                    "step": 0.01,
+                    "default": 0.9,
+                    "label": "Top P",
+                },
+                {
+                    "name": "top_k",
+                    "type": "integer",
+                    "min": 1,
+                    "max": 100,
+                    "step": 1,
+                    "default": 40,
+                    "label": "Top K",
+                },
+                {
+                    "name": "max_tokens",
+                    "type": "integer",
+                    "min": 1,
+                    "max": 8192,
+                    "step": 1,
+                    "default": 2048,
+                    "label": "Max Tokens",
+                },
             ]
         else:
             return jsonify({"error": "unknown provider"}), 400
@@ -805,10 +1026,11 @@ def _initialize_ollama_with_app(app_instance):
     try:
         # We need to access the helper functions that are defined inside create_app
         # So we'll implement the logic here directly
-        
+
         # Allow tests (or other environments) to override the providers.json path
         PROVIDERS_JSON_PATH = os.environ.get(
-            "PROVIDERS_JSON_PATH", os.path.join(app_instance.root_path, "static", "providers.json")
+            "PROVIDERS_JSON_PATH",
+            os.path.join(app_instance.root_path, "static", "providers.json"),
         )
 
         def _load_providers_json() -> dict:
@@ -816,9 +1038,17 @@ def _initialize_ollama_with_app(app_instance):
                 with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
                     return json.load(f)
             except FileNotFoundError:
-                return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+                return {
+                    "providers": [],
+                    "favorites": [],
+                    "default": {"provider": None, "model": None},
+                }
             except Exception:
-                return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+                return {
+                    "providers": [],
+                    "favorites": [],
+                    "default": {"provider": None, "model": None},
+                }
 
         def _write_providers_json(data: dict) -> None:
             os.makedirs(os.path.dirname(PROVIDERS_JSON_PATH), exist_ok=True)
@@ -830,10 +1060,10 @@ def _initialize_ollama_with_app(app_instance):
         # Load current providers data
         data = _load_providers_json()
         providers = data.get("providers", [])
-        
+
         # Remove existing Ollama provider if present
         providers = [p for p in providers if p.get("id") != "ollama"]
-        
+
         # Check if Ollama is available and get models
         if is_ollama_available():
             # Try to start Ollama server if not running
@@ -844,22 +1074,24 @@ def _initialize_ollama_with_app(app_instance):
                     # Add Ollama provider with current models
                     ollama_provider = {
                         "id": "ollama",
-                        "name": "Ollama (Local)", 
-                        "models": models
+                        "name": "Ollama (Local)",
+                        "models": models,
                     }
                     providers.append(ollama_provider)
-                    print(f"Added Ollama provider with {len(models)} models to providers.json: {models}")
+                    print(
+                        f"Added Ollama provider with {len(models)} models to providers.json: {models}"
+                    )
                 else:
                     print("Ollama server running but no models found")
             else:
                 print("Failed to start Ollama server")
         else:
             print("Ollama not available - removed from providers.json if it was there")
-        
+
         # Update providers data and save
         data["providers"] = providers
         _write_providers_json(data)
-            
+
     except Exception as e:
         print(f"Error initializing Ollama: {e}")
 

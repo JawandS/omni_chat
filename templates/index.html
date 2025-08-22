@@ -412,8 +412,15 @@ Omni Chat
       if (chat.model) modelEl.value = chat.model;
       messagesEl.innerHTML = '';
       history = [];
+      let lastUserMessage = null;
       for (const m of msgs) {
-        appendMessage(m.role, m.content, m.provider, m.model);
+        if (m.role === 'user') {
+          lastUserMessage = m.content;
+          appendMessage(m.role, m.content, m.provider, m.model);
+        } else {
+          // For assistant messages, pass the last user message for retry functionality
+          appendMessage(m.role, m.content, m.provider, m.model, false, lastUserMessage);
+        }
         history.push({ role: m.role, content: m.content });
       }
     } catch (e) {
@@ -429,14 +436,49 @@ Omni Chat
     appendMessage('assistant', 'New chat started. How can I help?');
   }
 
-  function appendMessage(role, text, provider = null, model = null, isError = false) {
+  function appendMessage(role, text, provider = null, model = null, isError = false, userMessage = null) {
     const isUser = role === 'user';
     const wrapper = document.createElement('div');
     wrapper.className = `flex items-start gap-3 ${isUser ? 'justify-end' : ''}`;
     const badge = provider && model ? `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>` : '';
+    
+    // For assistant messages, add action buttons
+    let actionButtons = '';
+    if (!isUser && !isError && text && text !== 'New chat started. How can I help?') {
+      const messageId = Date.now() + Math.random(); // Unique ID for this message
+      actionButtons = `
+        <div class="flex items-center gap-1 mt-2 pt-2 border-t border-white/10">
+          <button onclick="copyMessage('${messageId}')" class="inline-flex items-center px-2 py-1 text-xs text-white/60 hover:text-white/90 hover:bg-white/10 rounded transition" title="Copy message">
+            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            Copy
+          </button>
+          ${userMessage ? `<button onclick="retryMessage('${messageId}', 'same')" class="inline-flex items-center px-2 py-1 text-xs text-white/60 hover:text-white/90 hover:bg-white/10 rounded transition" title="Retry with same model">
+            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            Retry
+          </button>
+          <button onclick="retryMessage('${messageId}', 'different')" class="inline-flex items-center px-2 py-1 text-xs text-white/60 hover:text-white/90 hover:bg-white/10 rounded transition" title="Retry with different model">
+            <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m0-4l-4-4"></path></svg>
+            Retry with different model
+          </button>` : ''}
+        </div>
+      `;
+      
+      // Store message metadata for retry functionality
+      window.messageMetadata = window.messageMetadata || {};
+      window.messageMetadata[messageId] = {
+        userMessage: userMessage,
+        provider: provider,
+        model: model,
+        text: text
+      };
+    }
+    
     wrapper.innerHTML = `
       ${isUser ? '' : '<div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>'}
-      <div class="max-w-3xl">${badge}<div class="rounded-xl border ${isError ? 'border-red-400/60 bg-red-500/10' : 'border-white/10 ' + (isUser ? 'bg-primary-600/20' : 'bg-white/5')} p-3">${escapeHtml(text)}</div></div>
+      <div class="max-w-3xl">${badge}<div class="rounded-xl border ${isError ? 'border-red-400/60 bg-red-500/10' : 'border-white/10 ' + (isUser ? 'bg-primary-600/20' : 'bg-white/5')} p-3">
+        <div id="message-content-${isUser ? '' : Date.now() + Math.random()}">${escapeHtml(text)}</div>
+        ${actionButtons}
+      </div></div>
     `;
     messagesEl.appendChild(wrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -444,6 +486,252 @@ Omni Chat
 
   function escapeHtml(str) {
     return str.replace(/[&<>"]+/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  // Copy message to clipboard
+  async function copyMessage(messageId) {
+    const metadata = window.messageMetadata && window.messageMetadata[messageId];
+    if (!metadata) return;
+    
+    try {
+      await navigator.clipboard.writeText(metadata.text);
+      showToast('Message copied to clipboard');
+    } catch (err) {
+      console.error('Failed to copy:', err);
+      showToast('Failed to copy message');
+    }
+  }
+
+  // Retry message with same or different model
+  async function retryMessage(messageId, type) {
+    const metadata = window.messageMetadata && window.messageMetadata[messageId];
+    if (!metadata || !metadata.userMessage) return;
+    
+    let provider = metadata.provider;
+    let model = metadata.model;
+    
+    if (type === 'different') {
+      // Use currently selected provider/model from dropdown
+      provider = providerEl.value;
+      model = modelEl.value;
+      
+      // Show confirmation
+      if (!confirm(`Retry with ${provider}/${model}?`)) {
+        return;
+      }
+    }
+    
+    // Prevent if already submitting
+    if (isSubmitting) {
+      showToast('Please wait for current message to complete');
+      return;
+    }
+    
+    // Find the user message in history that corresponds to this assistant message
+    const userMessage = metadata.userMessage;
+    
+    // Remove this assistant message and any messages after it from display
+    removeMessagesAfterUserMessage(userMessage);
+    
+    // Remove corresponding entries from history array
+    removeFromHistoryAfterUserMessage(userMessage);
+    
+    // Re-submit the user message with specified provider/model
+    await submitMessage(userMessage, provider, model);
+  }
+
+  // Helper function to remove messages after a specific user message
+  function removeMessagesAfterUserMessage(targetUserMessage) {
+    const messageElements = Array.from(messagesEl.children);
+    let foundTarget = false;
+    
+    // Find the target user message and remove everything after it
+    for (let i = messageElements.length - 1; i >= 0; i--) {
+      const element = messageElements[i];
+      const textContent = element.textContent || '';
+      
+      if (foundTarget) {
+        element.remove();
+      } else if (textContent.includes(targetUserMessage)) {
+        foundTarget = true;
+        // Remove the next assistant message (the one we're retrying)
+        if (i + 1 < messageElements.length) {
+          messageElements[i + 1].remove();
+        }
+      }
+    }
+  }
+
+  // Helper function to remove entries from history after a user message
+  function removeFromHistoryAfterUserMessage(targetUserMessage) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role === 'user' && history[i].content === targetUserMessage) {
+        // Remove this user message and all following messages
+        history.splice(i);
+        break;
+      }
+    }
+  }
+
+  // Helper function to submit a message (extracted from form submit handler)
+  async function submitMessage(message, provider, model) {
+    isSubmitting = true;
+    
+    console.log('[FRONTEND] Retrying message:', { message: message.substring(0, 50), provider, model, chat_id: currentChatId });
+    
+    appendMessage('user', message, provider, model);
+    
+    const title = chatTitleEl.value.trim();
+    
+    // Create assistant message placeholder for streaming with unique IDs
+    const messageId = Date.now(); // Use timestamp as unique ID
+    console.log('[FRONTEND] Created message placeholder with ID:', messageId);
+    
+    const assistantWrapper = document.createElement('div');
+    assistantWrapper.className = 'flex items-start gap-3';
+    const badge = `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>`;
+    assistantWrapper.innerHTML = `
+      <div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>
+      <div class="max-w-3xl">${badge}<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+        <span id="loading-indicator-${messageId}" class="text-white/60">Thinking...</span>
+        <span id="streaming-content-${messageId}" style="display: none;"></span>
+        <span id="typing-indicator-${messageId}" style="display: none;">▋</span>
+      </div></div>
+    `;
+    messagesEl.appendChild(assistantWrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    
+    const loadingIndicator = document.getElementById(`loading-indicator-${messageId}`);
+    const streamingContent = document.getElementById(`streaming-content-${messageId}`);
+    const typingIndicator = document.getElementById(`typing-indicator-${messageId}`);
+    let fullReply = '';
+    
+    try {
+      console.log('[FRONTEND] Starting streaming request to /api/chat/stream');
+      
+      const response = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, params: currentParams })
+      });
+
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+
+      console.log('[FRONTEND] Got streaming response, starting to read');
+      
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let streamingStarted = false;
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (!line.trim() || !line.startsWith('data: ')) continue;
+          
+          try {
+            const jsonStr = line.substring(6);
+            if (jsonStr === '[DONE]') {
+              console.log('[FRONTEND] Received [DONE] signal');
+              if (typingIndicator) typingIndicator.style.display = 'none';
+              history.push({ role: 'user', content: message });
+              history.push({ role: 'assistant', content: fullReply });
+              
+              // Replace the streaming content with final message including action buttons
+              const finalMessage = document.createElement('div');
+              finalMessage.className = 'flex items-start gap-3';
+              const finalBadge = `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>`;
+              const finalMessageId = Date.now() + Math.random();
+              
+              // Store metadata for the final message
+              window.messageMetadata = window.messageMetadata || {};
+              window.messageMetadata[finalMessageId] = {
+                userMessage: message,
+                provider: provider,
+                model: model,
+                text: fullReply
+              };
+              
+              finalMessage.innerHTML = `
+                <div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>
+                <div class="max-w-3xl">${finalBadge}<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <div>${escapeHtml(fullReply)}</div>
+                  <div class="flex items-center gap-1 mt-2 pt-2 border-t border-white/10">
+                    <button onclick="copyMessage('${finalMessageId}')" class="inline-flex items-center px-2 py-1 text-xs text-white/60 hover:text-white/90 hover:bg-white/10 rounded transition" title="Copy message">
+                      <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                      Copy
+                    </button>
+                    <button onclick="retryMessage('${finalMessageId}', 'same')" class="inline-flex items-center px-2 py-1 text-xs text-white/60 hover:text-white/90 hover:bg-white/10 rounded transition" title="Retry with same model">
+                      <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                      Retry
+                    </button>
+                    <button onclick="retryMessage('${finalMessageId}', 'different')" class="inline-flex items-center px-2 py-1 text-xs text-white/60 hover:text-white/90 hover:bg-white/10 rounded transition" title="Retry with different model">
+                      <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m0-4l-4-4"></path></svg>
+                      Retry with different model
+                    </button>
+                  </div>
+                </div></div>
+              `;
+              
+              // Replace the streaming wrapper with the final message
+              assistantWrapper.replaceWith(finalMessage);
+              
+              loadHistory();
+              isSubmitting = false;
+              return;
+            }
+            
+            const data = JSON.parse(jsonStr);
+            
+            if (data.type === 'token') {
+              if (!streamingStarted) {
+                streamingStarted = true;
+                if (loadingIndicator) loadingIndicator.style.display = 'none';
+                if (streamingContent) streamingContent.style.display = 'inline';
+                if (typingIndicator) typingIndicator.style.display = 'inline';
+              }
+              
+              fullReply += data.token;
+              if (streamingContent) {
+                streamingContent.textContent = fullReply;
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+              }
+            } else if (data.type === 'error') {
+              console.log('[FRONTEND] Received error:', data.error);
+              if (loadingIndicator) loadingIndicator.style.display = 'none';
+              if (typingIndicator) typingIndicator.style.display = 'none';
+              if (streamingContent) {
+                streamingContent.style.display = 'inline';
+                streamingContent.textContent = data.error || 'Provider error';
+                streamingContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
+              }
+              isSubmitting = false;
+              return;
+            }
+          } catch (parseError) {
+            console.error('[FRONTEND] Error parsing streaming data:', parseError);
+          }
+        }
+      }
+      
+    } catch (err) {
+      console.error('[FRONTEND] Streaming error:', err);
+      if (loadingIndicator) loadingIndicator.style.display = 'none';
+      if (typingIndicator) typingIndicator.style.display = 'none';
+      if (streamingContent) {
+        streamingContent.style.display = 'inline';
+        streamingContent.textContent = 'Error contacting server.';
+        streamingContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
+      }
+      showToast('Provider call failed or API key missing. Open settings to configure.');
+      isSubmitting = false;
+    }
   }
 
   composerEl.addEventListener('submit', async (e) => {
@@ -588,6 +876,46 @@ Omni Chat
                 console.log('[FRONTEND] Streaming complete, full reply length:', fullReply.length);
                 // Streaming complete
                 if (typingIndicator) typingIndicator.style.display = 'none';
+                
+                // Replace the streaming content with final message including action buttons
+                const finalMessage = document.createElement('div');
+                finalMessage.className = 'flex items-start gap-3';
+                const finalBadge = `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>`;
+                const finalMessageId = Date.now() + Math.random();
+                
+                // Store metadata for the final message
+                window.messageMetadata = window.messageMetadata || {};
+                window.messageMetadata[finalMessageId] = {
+                  userMessage: message,
+                  provider: provider,
+                  model: model,
+                  text: fullReply
+                };
+                
+                finalMessage.innerHTML = `
+                  <div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>
+                  <div class="max-w-3xl">${finalBadge}<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+                    <div>${escapeHtml(fullReply)}</div>
+                    <div class="flex items-center gap-1 mt-2 pt-2 border-t border-white/10">
+                      <button onclick="copyMessage('${finalMessageId}')" class="inline-flex items-center px-2 py-1 text-xs text-white/60 hover:text-white/90 hover:bg-white/10 rounded transition" title="Copy message">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                        Copy
+                      </button>
+                      <button onclick="retryMessage('${finalMessageId}', 'same')" class="inline-flex items-center px-2 py-1 text-xs text-white/60 hover:text-white/90 hover:bg-white/10 rounded transition" title="Retry with same model">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        Retry
+                      </button>
+                      <button onclick="retryMessage('${finalMessageId}', 'different')" class="inline-flex items-center px-2 py-1 text-xs text-white/60 hover:text-white/90 hover:bg-white/10 rounded transition" title="Retry with different model">
+                        <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m0-4l-4-4"></path></svg>
+                        Retry with different model
+                      </button>
+                    </div>
+                  </div></div>
+                `;
+                
+                // Replace the streaming wrapper with the final message
+                assistantWrapper.replaceWith(finalMessage);
+                
                 // Now add both user and assistant messages to history
                 history.push({ role: 'user', content: message });
                 history.push({ role: 'assistant', content: fullReply });

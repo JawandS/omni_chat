@@ -6,14 +6,34 @@ Omni Chat
 
 {% block content %}
 <div class="grid grid-cols-12 gap-4 md:gap-6 h-full min-h-0">
-  <!-- Sidebar: conversation history (placeholder) -->
+  <!-- Sidebar: conversation history and projects -->
   <aside class="hidden md:block col-span-3 min-h-0">
-    <div class="h-full min-h-0 rounded-xl border border-white/10 bg-white/5">
-      <div class="p-4 border-b border-white/10 flex items-center justify-between">
-        <span class="font-medium">History</span>
-        <button id="clear-history" class="text-sm text-white/70 hover:text-white">Clear</button>
+    <div class="h-full min-h-0 rounded-xl border border-white/10 bg-white/5 flex flex-col">
+      <!-- Tab headers -->
+      <div class="p-3 border-b border-white/10">
+        <div class="flex">
+          <button id="tab-chats" class="flex-1 px-3 py-2 text-sm font-medium rounded-lg bg-white/10 text-white">Chats</button>
+          <button id="tab-projects" class="flex-1 px-3 py-2 text-sm font-medium rounded-lg text-white/70 hover:text-white hover:bg-white/5 transition ml-1">Projects</button>
+        </div>
       </div>
-      <div id="history" class="p-3 space-y-2 overflow-auto h-[calc(100%-3.25rem)]"></div>
+      
+      <!-- Chats tab content -->
+      <div id="chats-tab" class="flex-1 min-h-0 flex flex-col">
+        <div class="p-3 border-b border-white/10 flex items-center justify-between">
+          <span class="font-medium">History</span>
+          <button id="clear-history" class="text-sm text-white/70 hover:text-white">Clear</button>
+        </div>
+        <div id="history" class="flex-1 p-3 space-y-2 overflow-auto"></div>
+      </div>
+      
+      <!-- Projects tab content -->
+      <div id="projects-tab" class="flex-1 min-h-0 flex-col hidden">
+        <div class="p-3 border-b border-white/10 flex items-center justify-between">
+          <span class="font-medium">Projects</span>
+          <button id="new-project" class="text-sm text-white/70 hover:text-white">New</button>
+        </div>
+        <div id="projects-list" class="flex-1 p-3 space-y-2 overflow-auto"></div>
+      </div>
     </div>
   </aside>
 
@@ -54,6 +74,15 @@ Omni Chat
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.757.426 1.757 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.757-2.924 1.757-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.757-.426-1.757-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.573-1.065Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
               </button>
             </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <label for="project" class="text-sm text-white/70">Project</label>
+          <div class="relative">
+            <select id="project" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition">
+              <option value="">No project</option>
+            </select>
+            <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/70">▾</span>
           </div>
         </div>
         <!-- Centered title -->
@@ -117,6 +146,83 @@ Omni Chat
   </div>
 </div>
 
+<!-- Project Management Modal -->
+<div id="project-overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity z-40 flex items-center justify-center p-4">
+  <div id="project-modal" class="w-full max-w-4xl bg-neutral-900 border border-white/15 rounded-2xl shadow-2xl ring-1 ring-black/60 flex flex-col max-h-[90vh] opacity-0 scale-95 transition-all">
+    <div class="px-5 py-4 border-b border-white/10 flex items-center justify-between">
+      <div class="flex items-center gap-2 text-sm font-semibold tracking-wide">
+        <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-primary-600/20 text-primary-300">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25H11.69l-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v6.75Z"/></svg>
+        </span>
+        <span id="project-modal-title">Project Management</span>
+      </div>
+      <button id="close-project" class="text-white/60 hover:text-white transition">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+    
+    <div class="flex flex-1 min-h-0">
+      <!-- Project list panel -->
+      <div class="w-64 border-r border-white/10 flex flex-col">
+        <div class="p-4 border-b border-white/10">
+          <button id="new-project-btn" class="w-full px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 text-sm text-white transition">
+            New Project
+          </button>
+        </div>
+        <div id="project-list-panel" class="flex-1 p-3 space-y-2 overflow-auto"></div>
+      </div>
+      
+      <!-- Project details panel -->
+      <div class="flex-1 flex flex-col min-h-0">
+        <div id="project-details" class="flex-1 p-5 overflow-auto">
+          <div id="no-project-selected" class="flex items-center justify-center h-full text-white/50">
+            Select a project to view details
+          </div>
+          
+          <div id="project-form" class="hidden space-y-4">
+            <div>
+              <label for="project-name" class="block text-sm font-medium text-white mb-2">Name</label>
+              <input id="project-name" type="text" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40" placeholder="Project name">
+            </div>
+            
+            <div>
+              <label for="project-description" class="block text-sm font-medium text-white mb-2">Description</label>
+              <textarea id="project-description" rows="3" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 resize-none" placeholder="Project description"></textarea>
+            </div>
+            
+            <div>
+              <label for="project-system-prompt" class="block text-sm font-medium text-white mb-2">System Prompt</label>
+              <textarea id="project-system-prompt" rows="4" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 resize-none" placeholder="System prompt for this project..."></textarea>
+            </div>
+            
+            <div class="flex gap-2">
+              <button id="save-project" class="px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 text-sm text-white transition">Save</button>
+              <button id="delete-project" class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm text-white transition">Delete</button>
+            </div>
+            
+            <hr class="border-white/10">
+            
+            <!-- Project files section -->
+            <div>
+              <div class="flex items-center justify-between mb-3">
+                <h3 class="font-medium text-white">Files</h3>
+                <button id="new-file-btn" class="px-3 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white transition">Add File</button>
+              </div>
+              <div id="project-files" class="space-y-2"></div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="px-5 py-4 border-t border-white/10 flex justify-end">
+          <button id="close-project-footer" class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white/80 hover:text-white transition">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   const providerEl = document.getElementById('provider');
   const favoriteModelEl = document.getElementById('favorite-model');
@@ -140,6 +246,30 @@ Omni Chat
   const configBody = document.getElementById('config-body');
   const resetConfigBtn = document.getElementById('reset-config');
 
+  // Project management elements
+  const projectEl = document.getElementById('project');
+  const tabChatsEl = document.getElementById('tab-chats');
+  const tabProjectsEl = document.getElementById('tab-projects');
+  const chatsTabEl = document.getElementById('chats-tab');
+  const projectsTabEl = document.getElementById('projects-tab');
+  const projectsListEl = document.getElementById('projects-list');
+  const newProjectSidebarEl = document.getElementById('new-project');
+  const projectOverlay = document.getElementById('project-overlay');
+  const projectModal = document.getElementById('project-modal');
+  const closeProjectBtn = document.getElementById('close-project');
+  const closeProjectFooterBtn = document.getElementById('close-project-footer');
+  const newProjectBtn = document.getElementById('new-project-btn');
+  const projectListPanel = document.getElementById('project-list-panel');
+  const projectForm = document.getElementById('project-form');
+  const noProjectSelected = document.getElementById('no-project-selected');
+  const projectNameEl = document.getElementById('project-name');
+  const projectDescriptionEl = document.getElementById('project-description');
+  const projectSystemPromptEl = document.getElementById('project-system-prompt');
+  const saveProjectBtn = document.getElementById('save-project');
+  const deleteProjectBtn = document.getElementById('delete-project');
+  const newFileBtnEl = document.getElementById('new-file-btn');
+  const projectFilesEl = document.getElementById('project-files');
+
   // In-memory current param values keyed by name
   let currentParams = {};
   let defaultParams = {};
@@ -157,6 +287,11 @@ Omni Chat
   let history = [];
   let currentChatId = null;
   let isSubmitting = false; // Flag to prevent duplicate submissions
+
+  // Project management state
+  let projects = [];
+  let currentProjectId = null;
+  let selectedProjectIdInModal = null;
 
   async function loadProviders() {
     try {
@@ -467,7 +602,7 @@ Omni Chat
     const provider = providerEl.value;
     const model = modelEl.value;
     
-    console.log('[FRONTEND] Sending message:', { message: message.substring(0, 50), provider, model, chat_id: currentChatId });
+    console.log('[FRONTEND] Sending message:', { message: message.substring(0, 50), provider, model, chat_id: currentChatId, project_id: currentProjectId });
     
     appendMessage('user', message, provider, model);
     // Note: Don't add to history yet - the backend will handle adding both user and assistant messages
@@ -504,7 +639,7 @@ Omni Chat
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, params: currentParams })
+  body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, project_id: currentProjectId, params: currentParams })
       });
 
       if (!response.ok) {
@@ -682,6 +817,301 @@ Omni Chat
     startNewChat();
   });
 
+  // Project management functions
+  async function loadProjects() {
+    try {
+      const res = await fetch('/api/projects', { cache: 'no-store' });
+      const data = await res.json();
+      projects = data.projects || [];
+      populateProjectSelector();
+      populateProjectsList();
+    } catch (err) {
+      console.error('Failed to load projects:', err);
+    }
+  }
+
+  function populateProjectSelector() {
+    const options = ['<option value="">No project</option>'];
+    for (const project of projects) {
+      const selected = currentProjectId === project.id ? ' selected' : '';
+      options.push(`<option value="${project.id}"${selected}>${project.name}</option>`);
+    }
+    projectEl.innerHTML = options.join('');
+  }
+
+  function populateProjectsList() {
+    projectsListEl.innerHTML = '';
+    projectListPanel.innerHTML = '';
+    
+    // Add "New project" button to sidebar
+    const newBtn = document.createElement('button');
+    newBtn.className = 'w-full text-left px-3 py-2 rounded-lg bg-white/0 hover:bg-white/10 transition';
+    newBtn.textContent = 'New project…';
+    newBtn.addEventListener('click', () => openProjectModal());
+    projectsListEl.appendChild(newBtn);
+    
+    if (!projects.length) {
+      const empty = document.createElement('div');
+      empty.className = 'text-white/60 text-sm';
+      empty.textContent = 'No projects yet.';
+      projectsListEl.appendChild(empty);
+      return;
+    }
+    
+    // Add projects to sidebar
+    for (const project of projects) {
+      const btn = document.createElement('button');
+      btn.className = 'w-full text-left px-3 py-2 rounded-lg bg-white/0 hover:bg-white/10 transition text-sm truncate';
+      btn.textContent = project.name;
+      btn.addEventListener('click', () => {
+        currentProjectId = project.id;
+        populateProjectSelector();
+        loadHistory(); // Refresh to show chats for this project
+      });
+      projectsListEl.appendChild(btn);
+      
+      // Add to modal project list
+      const modalBtn = document.createElement('button');
+      modalBtn.className = 'w-full text-left px-3 py-2 rounded-lg bg-white/0 hover:bg-white/10 transition text-sm truncate';
+      modalBtn.textContent = project.name;
+      modalBtn.addEventListener('click', () => selectProjectInModal(project.id));
+      projectListPanel.appendChild(modalBtn);
+    }
+  }
+
+  function openProjectModal() {
+    selectedProjectIdInModal = null;
+    projectForm.classList.add('hidden');
+    noProjectSelected.classList.remove('hidden');
+    projectOverlay.classList.remove('pointer-events-none');
+    requestAnimationFrame(() => {
+      projectOverlay.classList.add('opacity-100');
+      projectModal.classList.add('opacity-100', 'scale-100');
+    });
+    loadProjects(); // Refresh project list
+  }
+
+  function closeProjectModal() {
+    projectOverlay.classList.add('pointer-events-none');
+    projectOverlay.classList.remove('opacity-100');
+    projectModal.classList.remove('opacity-100', 'scale-100');
+  }
+
+  async function selectProjectInModal(projectId) {
+    selectedProjectIdInModal = projectId;
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    projectNameEl.value = project.name || '';
+    projectDescriptionEl.value = project.description || '';
+    projectSystemPromptEl.value = project.system_prompt || '';
+    
+    projectForm.classList.remove('hidden');
+    noProjectSelected.classList.add('hidden');
+    
+    // Load project files
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, { cache: 'no-store' });
+      const data = await res.json();
+      populateProjectFiles(data.files || []);
+    } catch (err) {
+      console.error('Failed to load project details:', err);
+    }
+  }
+
+  function populateProjectFiles(files) {
+    projectFilesEl.innerHTML = '';
+    for (const file of files) {
+      const fileDiv = document.createElement('div');
+      fileDiv.className = 'flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10';
+      fileDiv.innerHTML = `
+        <span class="text-sm truncate">${file.filename}</span>
+        <div class="flex gap-1">
+          <button class="px-2 py-1 text-xs rounded bg-white/10 hover:bg-white/20 transition edit-file-btn" data-file-id="${file.id}">Edit</button>
+          <button class="px-2 py-1 text-xs rounded bg-red-600/20 hover:bg-red-600/30 text-red-200 transition delete-file-btn" data-file-id="${file.id}">Delete</button>
+        </div>
+      `;
+      projectFilesEl.appendChild(fileDiv);
+    }
+    
+    // Add event listeners for file buttons
+    projectFilesEl.querySelectorAll('.edit-file-btn').forEach(btn => {
+      btn.addEventListener('click', () => editFile(parseInt(btn.dataset.fileId)));
+    });
+    projectFilesEl.querySelectorAll('.delete-file-btn').forEach(btn => {
+      btn.addEventListener('click', () => deleteFile(parseInt(btn.dataset.fileId)));
+    });
+  }
+
+  async function editFile(fileId) {
+    const filename = prompt('Enter filename:');
+    if (!filename) return;
+    
+    const content = prompt('Enter file content:');
+    if (content === null) return;
+    
+    try {
+      await fetch(`/api/projects/${selectedProjectIdInModal}/files/${fileId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, content })
+      });
+      selectProjectInModal(selectedProjectIdInModal); // Refresh
+    } catch (err) {
+      showToast('Failed to update file');
+    }
+  }
+
+  async function deleteFile(fileId) {
+    if (!confirm('Delete this file?')) return;
+    
+    try {
+      await fetch(`/api/projects/${selectedProjectIdInModal}/files/${fileId}`, {
+        method: 'DELETE'
+      });
+      selectProjectInModal(selectedProjectIdInModal); // Refresh
+    } catch (err) {
+      showToast('Failed to delete file');
+    }
+  }
+
+  // Tab switching
+  tabChatsEl?.addEventListener('click', () => {
+    tabChatsEl.classList.add('bg-white/10', 'text-white');
+    tabChatsEl.classList.remove('text-white/70', 'hover:text-white', 'hover:bg-white/5');
+    tabProjectsEl.classList.remove('bg-white/10', 'text-white');
+    tabProjectsEl.classList.add('text-white/70', 'hover:text-white', 'hover:bg-white/5');
+    chatsTabEl.classList.remove('hidden');
+    chatsTabEl.classList.add('flex');
+    projectsTabEl.classList.add('hidden');
+    projectsTabEl.classList.remove('flex');
+  });
+
+  tabProjectsEl?.addEventListener('click', () => {
+    tabProjectsEl.classList.add('bg-white/10', 'text-white');
+    tabProjectsEl.classList.remove('text-white/70', 'hover:text-white', 'hover:bg-white/5');
+    tabChatsEl.classList.remove('bg-white/10', 'text-white');
+    tabChatsEl.classList.add('text-white/70', 'hover:text-white', 'hover:bg-white/5');
+    projectsTabEl.classList.remove('hidden');
+    projectsTabEl.classList.add('flex');
+    chatsTabEl.classList.add('hidden');
+    chatsTabEl.classList.remove('flex');
+  });
+
+  // Project modal event listeners
+  newProjectSidebarEl?.addEventListener('click', openProjectModal);
+  newProjectBtn?.addEventListener('click', () => {
+    selectedProjectIdInModal = null;
+    projectNameEl.value = '';
+    projectDescriptionEl.value = '';
+    projectSystemPromptEl.value = '';
+    projectForm.classList.remove('hidden');
+    noProjectSelected.classList.add('hidden');
+    projectFilesEl.innerHTML = '';
+  });
+
+  closeProjectBtn?.addEventListener('click', closeProjectModal);
+  closeProjectFooterBtn?.addEventListener('click', closeProjectModal);
+
+  saveProjectBtn?.addEventListener('click', async () => {
+    const name = projectNameEl.value.trim();
+    if (!name) {
+      showToast('Project name is required');
+      return;
+    }
+    
+    const data = {
+      name,
+      description: projectDescriptionEl.value.trim() || null,
+      system_prompt: projectSystemPromptEl.value.trim() || null
+    };
+    
+    try {
+      let res;
+      if (selectedProjectIdInModal) {
+        res = await fetch(`/api/projects/${selectedProjectIdInModal}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+      } else {
+        res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+        const result = await res.json();
+        if (result.project_id) {
+          selectedProjectIdInModal = result.project_id;
+        }
+      }
+      
+      if (res.ok) {
+        showToast('Project saved');
+        loadProjects();
+      } else {
+        showToast('Failed to save project');
+      }
+    } catch (err) {
+      showToast('Failed to save project');
+    }
+  });
+
+  deleteProjectBtn?.addEventListener('click', async () => {
+    if (!selectedProjectIdInModal) return;
+    if (!confirm('Delete this project? Associated chats will be preserved but unlinked.')) return;
+    
+    try {
+      const res = await fetch(`/api/projects/${selectedProjectIdInModal}`, {
+        method: 'DELETE'
+      });
+      
+      if (res.ok) {
+        showToast('Project deleted');
+        loadProjects();
+        closeProjectModal();
+      } else {
+        showToast('Failed to delete project');
+      }
+    } catch (err) {
+      showToast('Failed to delete project');
+    }
+  });
+
+  newFileBtnEl?.addEventListener('click', async () => {
+    if (!selectedProjectIdInModal) return;
+    
+    const filename = prompt('Enter filename:');
+    if (!filename) return;
+    
+    const content = prompt('Enter file content:') || '';
+    
+    try {
+      const res = await fetch(`/api/projects/${selectedProjectIdInModal}/files`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, content })
+      });
+      
+      if (res.ok) {
+        selectProjectInModal(selectedProjectIdInModal); // Refresh
+      } else {
+        showToast('Failed to create file');
+      }
+    } catch (err) {
+      showToast('Failed to create file');
+    }
+  });
+
+  // Update chat submission to include project_id
+  const originalFormSubmit = composerEl.addEventListener;
+  
+  // Project selector change handler
+  projectEl?.addEventListener('change', () => {
+    currentProjectId = projectEl.value ? parseInt(projectEl.value) : null;
+  });
+
+  loadProjects();
   loadProviders();
   loadHistory();
 </script>

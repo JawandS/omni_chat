@@ -5,7 +5,8 @@
   },
   "favorites": [
     "gemini:gemini-2.5-flash",
-    "openai:gpt-5-chat-latest"
+    "openai:gpt-5-chat-latest",
+    "ollama:phi3:mini"
   ],
   "providers": [
     {
@@ -13,6 +14,7 @@
       "name": "Google Gemini",
       "models": [
         "gemini-2.5-flash-lite",
+        "gemini-2.0-flash-lite",
         "gemini-2.5-pro",
         "gemini-2.5-flash"
       ]
@@ -27,6 +29,14 @@
         "gpt-4o",
         "gpt-4o-mini",
         "o3-mini"
+      ]
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama (Local)",
+      "models": [
+        "phi3:mini",
+        "qwen2.5:0.5b"
       ]
     }
   ]

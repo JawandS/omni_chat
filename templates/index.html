@@ -56,6 +56,12 @@ Omni Chat
             </div>
           </div>
         </div>
+        <!-- Multi-model toggle button -->
+        <div class="flex items-center">
+          <button id="multi-model-toggle" class="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-white/70 hover:text-white transition" title="Toggle multiple models">
+            <span id="multi-model-icon">🔀</span>
+          </button>
+        </div>
         <!-- Centered title -->
         <div class="flex-1 flex justify-center">
           <input id="chat-title" type="text" placeholder="Untitled chat" class="w-56 md:w-80 text-center rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 placeholder-white/40" />
@@ -64,6 +70,19 @@ Omni Chat
           <button id="new-chat" class="inline-flex items-center rounded-lg bg-primary-600 hover:bg-primary-500 focus:ring-4 focus:ring-primary-400/40 px-4 py-2 text-sm font-medium transition">New Chat</button>
           <button id="delete-chat" class="inline-flex items-center rounded-lg bg-red-600 hover:bg-red-500 focus:ring-4 focus:ring-red-400/40 px-3 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed" title="Delete current chat">Delete</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Multi-model selection panel (initially hidden) -->
+    <div id="multi-model-panel" class="hidden rounded-xl border border-white/10 bg-white/5 p-3 md:p-4 mb-3 md:mb-4">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-medium text-white/90">Multiple Models</h3>
+        <button id="add-model" class="inline-flex items-center rounded-lg bg-primary-600 hover:bg-primary-500 px-3 py-1 text-xs font-medium transition">
+          <span class="mr-1">+</span> Add Model
+        </button>
+      </div>
+      <div id="selected-models" class="space-y-2">
+        <!-- Selected models will be populated here -->
       </div>
     </div>
 
@@ -157,6 +176,8 @@ Omni Chat
   let history = [];
   let currentChatId = null;
   let isSubmitting = false; // Flag to prevent duplicate submissions
+  let isMultiModelMode = false; // Toggle for multi-model mode
+  let selectedModels = []; // Array of selected models for multi-model mode
 
   async function loadProviders() {
     try {
@@ -291,6 +312,83 @@ Omni Chat
     configOverlay.classList.remove('opacity-100');
     configModal.classList.remove('opacity-100','scale-100');
   }
+
+  // Multi-model functions
+  function toggleMultiModelMode() {
+    isMultiModelMode = !isMultiModelMode;
+    const multiModelPanel = document.getElementById('multi-model-panel');
+    const multiModelIcon = document.getElementById('multi-model-icon');
+    
+    if (isMultiModelMode) {
+      multiModelPanel.classList.remove('hidden');
+      multiModelIcon.textContent = '🔄';
+      
+      // Initialize with current selection if any
+      if (providerEl.value && modelEl.value) {
+        selectedModels = [{
+          provider: providerEl.value,
+          model: modelEl.value
+        }];
+        renderSelectedModels();
+      }
+    } else {
+      multiModelPanel.classList.add('hidden');
+      multiModelIcon.textContent = '🔀';
+      selectedModels = [];
+    }
+  }
+
+  function renderSelectedModels() {
+    const container = document.getElementById('selected-models');
+    container.innerHTML = '';
+    
+    selectedModels.forEach((modelConfig, index) => {
+      const modelRow = document.createElement('div');
+      modelRow.className = 'flex items-center gap-2 p-2 rounded-lg bg-white/5 border border-white/10';
+      
+      const providerName = providers.find(p => p.id === modelConfig.provider)?.name || modelConfig.provider;
+      
+      modelRow.innerHTML = `
+        <div class="flex-1 text-sm text-white/90">
+          <span class="font-medium">${escapeHtml(providerName)}</span> / <span>${escapeHtml(modelConfig.model)}</span>
+        </div>
+        <button class="remove-model text-red-400 hover:text-red-300 transition" data-index="${index}" title="Remove model">
+          ✕
+        </button>
+      `;
+      
+      container.appendChild(modelRow);
+    });
+    
+    // Add event listeners to remove buttons
+    container.querySelectorAll('.remove-model').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const index = parseInt(e.target.dataset.index);
+        selectedModels.splice(index, 1);
+        renderSelectedModels();
+      });
+    });
+  }
+
+  function addCurrentModelToSelection() {
+    const provider = providerEl.value;
+    const model = modelEl.value;
+    
+    if (!provider || !model) {
+      showToast('Please select a provider and model first');
+      return;
+    }
+    
+    // Check if this combination already exists
+    const exists = selectedModels.some(m => m.provider === provider && m.model === model);
+    if (exists) {
+      showToast('This model is already selected');
+      return;
+    }
+    
+    selectedModels.push({ provider, model });
+    renderSelectedModels();
+  }
   modelConfigBtn.addEventListener('click', (e) => { e.preventDefault(); openConfigModal(); });
   closeConfigBtn.addEventListener('click', () => closeConfigModal());
   closeConfigFooterBtn.addEventListener('click', () => closeConfigModal());
@@ -298,6 +396,10 @@ Omni Chat
   configOverlay.addEventListener('click', (e) => { if (e.target === configOverlay) closeConfigModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeConfigModal(); });
   resetConfigBtn.addEventListener('click', (e) => { e.preventDefault(); currentParams = { ...defaultParams }; renderParamsForm(); });
+
+  // Multi-model event listeners
+  document.getElementById('multi-model-toggle').addEventListener('click', toggleMultiModelMode);
+  document.getElementById('add-model').addEventListener('click', addCurrentModelToSelection);
 
   async function fetchModelConfig() {
     const provider = providerEl.value;
@@ -443,7 +545,8 @@ Omni Chat
   }
 
   function escapeHtml(str) {
-    return str.replace(/[&<>"]+/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+    if (str == null) return '';
+    return String(str).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   }
 
   composerEl.addEventListener('submit', async (e) => {
@@ -462,18 +565,64 @@ Omni Chat
       return;
     }
     
+    // Validate model selection
+    if (isMultiModelMode) {
+      if (selectedModels.length === 0) {
+        showToast('Please select at least one model for multi-model mode');
+        return;
+      }
+    } else {
+      const provider = providerEl.value;
+      const model = modelEl.value;
+      if (!provider || !model) {
+        showToast('Please select a provider and model');
+        return;
+      }
+    }
+    
     isSubmitting = true; // Set flag to prevent duplicates
     inputEl.value = '';
-    const provider = providerEl.value;
-    const model = modelEl.value;
     
-    console.log('[FRONTEND] Sending message:', { message: message.substring(0, 50), provider, model, chat_id: currentChatId });
+    const title = chatTitleEl.value.trim();
     
-    appendMessage('user', message, provider, model);
+    // Handle both single and multi-model modes
+    let requestPayload;
+    if (isMultiModelMode && selectedModels.length > 0) {
+      requestPayload = {
+        message,
+        history,
+        models: selectedModels,
+        chat_id: currentChatId,
+        title,
+        params: currentParams
+      };
+      
+      console.log('[FRONTEND] Sending multi-model message:', { message: message.substring(0, 50), models: selectedModels, chat_id: currentChatId });
+      
+      // Show user message with first model for display
+      const firstModel = selectedModels[0];
+      appendMessage('user', message, firstModel.provider, firstModel.model);
+    } else {
+      // Single model mode (backward compatibility)
+      const provider = providerEl.value;
+      const model = modelEl.value;
+      
+      requestPayload = {
+        message,
+        history,
+        provider,
+        model,
+        chat_id: currentChatId,
+        title,
+        params: currentParams
+      };
+      
+      console.log('[FRONTEND] Sending single-model message:', { message: message.substring(0, 50), provider, model, chat_id: currentChatId });
+      appendMessage('user', message, provider, model);
+    }
     // Note: Don't add to history yet - the backend will handle adding both user and assistant messages
     // We'll add the user message to local history after successful submission, and assistant after streaming completes
 
-    const title = chatTitleEl.value.trim();
     
     // Create assistant message placeholder for streaming with unique IDs
     const messageId = Date.now(); // Use timestamp as unique ID
@@ -504,7 +653,7 @@ Omni Chat
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, params: currentParams })
+        body: JSON.stringify(requestPayload)
       });
 
       if (!response.ok) {

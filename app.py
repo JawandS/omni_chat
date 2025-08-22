@@ -26,14 +26,15 @@ from database import (
 from chat import generate_reply, generate_reply_stream, is_ollama_available, start_ollama_server, get_ollama_models
 
 
-def _validate_chat_request(data: dict) -> tuple[str, str, str]:
+def _validate_chat_request(data: dict) -> tuple[str, list[dict[str, str]]]:
     """Validate and extract required chat parameters.
 
     Args:
         data: Request JSON data.
 
     Returns:
-        Tuple of (message, provider, model).
+        Tuple of (message, models_list) where models_list is a list of 
+        {'provider': str, 'model': str} dictionaries.
 
     Raises:
         ValueError: If required parameters are missing or invalid.
@@ -42,15 +43,44 @@ def _validate_chat_request(data: dict) -> tuple[str, str, str]:
     if not message:
         raise ValueError("message is required")
 
-    provider = (data.get("provider") or "").strip()
-    if not provider:
-        raise ValueError("provider is required")
+    # Support both single model (backward compatibility) and multiple models
+    models_list = []
+    
+    # Check for new multi-model format
+    if "models" in data and isinstance(data["models"], list):
+        if not data["models"]:
+            raise ValueError("models list cannot be empty")
+        
+        for i, model_config in enumerate(data["models"]):
+            if not isinstance(model_config, dict):
+                raise ValueError(f"models[{i}] must be an object")
+            
+            provider = (model_config.get("provider") or "").strip()
+            if not provider:
+                raise ValueError(f"models[{i}].provider is required")
+            
+            model = (model_config.get("model") or "").strip()
+            if not model:
+                raise ValueError(f"models[{i}].model is required")
+            
+            models_list.append({"provider": provider, "model": model})
+    
+    # Fall back to single model format for backward compatibility
+    elif "provider" in data or "model" in data:
+        provider = (data.get("provider") or "").strip()
+        if not provider:
+            raise ValueError("provider is required")
 
-    model = (data.get("model") or "").strip()
-    if not model:
-        raise ValueError("model is required")
+        model = (data.get("model") or "").strip()
+        if not model:
+            raise ValueError("model is required")
+        
+        models_list.append({"provider": provider, "model": model})
+    
+    else:
+        raise ValueError("either 'models' array or 'provider'/'model' fields are required")
 
-    return message, provider, model
+    return message, models_list
 
 
 def _create_or_update_chat(
@@ -116,8 +146,12 @@ def create_app() -> Flask:
             {
                 "message": str,
                 "chat_id": int (optional),
-                "provider": str,
-                "model": str,
+                "provider": str,  // for single model (backward compatibility)
+                "model": str,     // for single model (backward compatibility)
+                "models": [       // for multiple models (new feature)
+                    {"provider": str, "model": str},
+                    {"provider": str, "model": str}
+                ],
                 "title": str (optional)
             }
 
@@ -126,10 +160,10 @@ def create_app() -> Flask:
         """
         try:
             data = request.get_json(silent=True) or {}
-            message, provider, model = _validate_chat_request(data)
+            message, models_list = _validate_chat_request(data)
 
             logger.info(f"[NON-STREAMING] Received message: {message[:50]}...")
-            logger.info(f"[NON-STREAMING] Provider: {provider}, Model: {model}")
+            logger.info(f"[NON-STREAMING] Models: {models_list}")
 
             chat_id = data.get("chat_id")
             title = (data.get("title") or "").strip()
@@ -141,28 +175,63 @@ def create_app() -> Flask:
                     (message[:48] + "…") if len(message) > 49 else message or "New chat"
                 )
 
-            # Create or update chat
-            chat_id = _create_or_update_chat(chat_id, title, provider, model, now)
+            # Use first model for chat metadata (for consistency)
+            first_model = models_list[0]
+            chat_id = _create_or_update_chat(
+                chat_id, title, first_model["provider"], first_model["model"], now
+            )
 
-            # Save user message
+            # Save user message with first model info
             insert_message(
-                chat_id, "user", message, now, provider=provider, model=model
+                chat_id, "user", message, now, 
+                provider=first_model["provider"], model=first_model["model"]
             )
             logger.info(f"[NON-STREAMING] Saved user message to chat {chat_id}")
 
-            # Generate and save assistant reply
+            # Generate and save assistant replies for each model
             history = data.get("history") or []
             params = data.get("params") or {}
-            reply_obj = generate_reply(provider, model, message, history, params=params)
+            
+            all_replies = []
+            combined_reply = ""
+            
+            for i, model_config in enumerate(models_list):
+                provider = model_config["provider"]
+                model = model_config["model"]
+                
+                logger.info(f"[NON-STREAMING] Generating reply {i+1}/{len(models_list)} with {provider}/{model}")
+                
+                reply_obj = generate_reply(provider, model, message, history, params=params)
+                
+                # Format the reply with model info for multi-model requests
+                if len(models_list) > 1:
+                    model_header = f"## {provider}/{model}\n\n"
+                    formatted_reply = model_header + reply_obj.reply
+                    if i < len(models_list) - 1:  # Add separator except for last reply
+                        formatted_reply += "\n\n---\n\n"
+                else:
+                    formatted_reply = reply_obj.reply
+                
+                combined_reply += formatted_reply
+                all_replies.append({
+                    "provider": provider,
+                    "model": model,
+                    "reply": reply_obj.reply,
+                    "warning": reply_obj.warning,
+                    "error": reply_obj.error,
+                    "missing_key_for": reply_obj.missing_key_for
+                })
+
+            # Save the combined reply to database
             insert_message(
                 chat_id,
                 "assistant",
-                reply_obj.reply,
+                combined_reply,
                 now,
-                provider=provider,
-                model=model,
+                provider=first_model["provider"],
+                model=first_model["model"],
             )
-            logger.info(f"[NON-STREAMING] Saved assistant reply to chat {chat_id}")
+            logger.info(f"[NON-STREAMING] Saved combined assistant reply to chat {chat_id}")
 
             # Update chat timestamp and commit
             touch_chat(chat_id, now)
@@ -170,13 +239,23 @@ def create_app() -> Flask:
 
             # Build response
             response_data = {
-                "reply": reply_obj.reply,
+                "reply": combined_reply,
+                "replies": all_replies,  # Individual replies for client inspection
                 "chat_id": chat_id,
                 "title": title or None,
             }
-            for attr in ["warning", "error", "missing_key_for"]:
-                if hasattr(reply_obj, attr) and getattr(reply_obj, attr):
-                    response_data[attr] = getattr(reply_obj, attr)
+            
+            # Aggregate warnings and errors from all models
+            warnings = [r["warning"] for r in all_replies if r["warning"]]
+            errors = [r["error"] for r in all_replies if r["error"]]
+            missing_keys = [r["missing_key_for"] for r in all_replies if r["missing_key_for"]]
+            
+            if warnings:
+                response_data["warning"] = "; ".join(warnings)
+            if errors:
+                response_data["error"] = "; ".join(errors)
+            if missing_keys:
+                response_data["missing_key_for"] = ", ".join(set(missing_keys))
 
             return jsonify(response_data)
 
@@ -193,8 +272,12 @@ def create_app() -> Flask:
             {
                 "message": str,
                 "chat_id": int (optional),
-                "provider": str,
-                "model": str,
+                "provider": str,  // for single model (backward compatibility)
+                "model": str,     // for single model (backward compatibility)
+                "models": [       // for multiple models (new feature)
+                    {"provider": str, "model": str},
+                    {"provider": str, "model": str}
+                ],
                 "title": str (optional)
             }
 
@@ -203,10 +286,10 @@ def create_app() -> Flask:
         """
         try:
             data = request.get_json(silent=True) or {}
-            message, provider, model = _validate_chat_request(data)
+            message, models_list = _validate_chat_request(data)
 
             logger.info(f"[STREAMING] Received message: {message[:50]}...")
-            logger.info(f"[STREAMING] Provider: {provider}, Model: {model}")
+            logger.info(f"[STREAMING] Models: {models_list}")
 
             chat_id = data.get("chat_id")
             title = (data.get("title") or "").strip()
@@ -219,14 +302,18 @@ def create_app() -> Flask:
                     (message[:48] + "…") if len(message) > 49 else message or "New chat"
                 )
 
-            # Create or update chat and commit immediately for streaming
-            chat_id = _create_or_update_chat(chat_id, title, provider, model, request_ts)
+            # Use first model for chat metadata
+            first_model = models_list[0]
+            chat_id = _create_or_update_chat(
+                chat_id, title, first_model["provider"], first_model["model"], request_ts
+            )
             commit()
 
-            # Save user message with its own timestamp and immediately bump chat updated_at
+            # Save user message with first model info
             user_msg_ts = datetime.now(UTC).isoformat()
             insert_message(
-                chat_id, "user", message, user_msg_ts, provider=provider, model=model
+                chat_id, "user", message, user_msg_ts, 
+                provider=first_model["provider"], model=first_model["model"]
             )
             # Touch chat so it appears/updates in history sidebar right after the user sends a message
             touch_chat(chat_id, user_msg_ts)
@@ -239,27 +326,56 @@ def create_app() -> Flask:
                     # Get history for context
                     history = data.get("history") or []
 
-                    # Send initial metadata
-                    yield f"data: {json.dumps({'type': 'metadata', 'chat_id': chat_id, 'title': title or None})}\n\n"
+                    # Send initial metadata with model count
+                    yield f"data: {json.dumps({'type': 'metadata', 'chat_id': chat_id, 'title': title or None, 'model_count': len(models_list)})}\n\n"
 
-                    full_reply = ""
-
-                    # Generate streaming reply
+                    combined_reply = ""
                     params = data.get("params") or {}
-                    for chunk in generate_reply_stream(
-                        provider, model, message, history, params=params
-                    ):
-                        if chunk.token:
-                            full_reply += chunk.token
-                            yield f"data: {json.dumps({'type': 'token', 'token': chunk.token})}\n\n"
-                        elif chunk.error:
-                            yield f"data: {json.dumps({'type': 'error', 'error': chunk.error, 'missing_key_for': chunk.missing_key_for})}\n\n"
-                            return
-                        elif chunk.warning:
-                            yield f"data: {json.dumps({'type': 'warning', 'warning': chunk.warning})}\n\n"
 
-                    # Save the complete reply to database in a new app context
-                    if full_reply:
+                    # Generate streaming replies for each model
+                    for model_index, model_config in enumerate(models_list):
+                        provider = model_config["provider"]
+                        model = model_config["model"]
+                        
+                        logger.info(f"[STREAMING] Generating reply {model_index+1}/{len(models_list)} with {provider}/{model}")
+                        
+                        # Send model start metadata
+                        yield f"data: {json.dumps({'type': 'model_start', 'model_index': model_index, 'provider': provider, 'model': model})}\n\n"
+                        
+                        # Add model header for multi-model requests
+                        if len(models_list) > 1:
+                            model_header = f"## {provider}/{model}\n\n"
+                            combined_reply += model_header
+                            yield f"data: {json.dumps({'type': 'token', 'token': model_header})}\n\n"
+                        
+                        model_reply = ""
+                        
+                        # Generate streaming reply for this model
+                        for chunk in generate_reply_stream(
+                            provider, model, message, history, params=params
+                        ):
+                            if chunk.token:
+                                model_reply += chunk.token
+                                combined_reply += chunk.token
+                                yield f"data: {json.dumps({'type': 'token', 'token': chunk.token})}\n\n"
+                            elif chunk.error:
+                                yield f"data: {json.dumps({'type': 'error', 'error': chunk.error, 'missing_key_for': chunk.missing_key_for, 'model_index': model_index})}\n\n"
+                                # Continue with next model instead of returning
+                                break
+                            elif chunk.warning:
+                                yield f"data: {json.dumps({'type': 'warning', 'warning': chunk.warning, 'model_index': model_index})}\n\n"
+                        
+                        # Send model end metadata and separator
+                        yield f"data: {json.dumps({'type': 'model_end', 'model_index': model_index})}\n\n"
+                        
+                        # Add separator between models (except for the last one)
+                        if model_index < len(models_list) - 1:
+                            separator = "\n\n---\n\n"
+                            combined_reply += separator
+                            yield f"data: {json.dumps({'type': 'token', 'token': separator})}\n\n"
+
+                    # Save the complete combined reply to database in a new app context
+                    if combined_reply:
                         with app.app_context():
                             try:
                                 # Use a fresh timestamp when assistant reply fully ready
@@ -267,15 +383,15 @@ def create_app() -> Flask:
                                 insert_message(
                                     chat_id,
                                     "assistant",
-                                    full_reply,
+                                    combined_reply,
                                     assistant_ts,
-                                    provider=provider,
-                                    model=model,
+                                    provider=first_model["provider"],
+                                    model=first_model["model"],
                                 )
                                 touch_chat(chat_id, assistant_ts)
                                 commit()
                                 logger.info(
-                                    f"[STREAMING] Saved assistant reply to chat {chat_id}"
+                                    f"[STREAMING] Saved combined assistant reply to chat {chat_id}"
                                 )
                             except Exception as e:
                                 logger.error(f"[STREAMING] Error saving reply: {e}")

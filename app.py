@@ -414,6 +414,31 @@ def create_app() -> Flask:
         commit()
         return jsonify({"ok": True})
 
+    @app.get("/api/chats/count")
+    def api_count_all_history():
+        """Get count of all chats and messages in the database.
+        
+        Returns:
+            JSON response with counts of chats and messages.
+        """
+        from database import count_all_history
+        
+        counts = count_all_history()
+        return jsonify(counts)
+
+    @app.delete("/api/chats")
+    def api_delete_all_history():
+        """Delete all chats and messages from the database.
+        
+        Returns:
+            JSON response with counts of deleted chats and messages.
+        """
+        from database import delete_all_history
+        
+        deleted_counts = delete_all_history()
+        commit()
+        return jsonify({"ok": True, "deleted": deleted_counts})
+
     # Settings: API keys -----------------------------------------------------
 
     def _get_env_path() -> str:
@@ -530,9 +555,22 @@ def create_app() -> Flask:
             with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
-            return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
-        except Exception:
-            return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
+            # If providers.json doesn't exist, try to copy from providers_template.json
+            template_path = os.path.join(os.path.dirname(PROVIDERS_JSON_PATH), "providers_template.json")
+            try:
+                with open(template_path, "r", encoding="utf-8") as f:
+                    template_data = json.load(f)
+                # Copy template to providers.json
+                _write_providers_json(template_data)
+                print(f"Created providers.json from template: {template_path}")
+                return template_data
+            except FileNotFoundError:
+                raise FileNotFoundError(f"Required template file not found: {template_path}. Cannot initialize providers configuration.")
+            except Exception as e:
+                raise Exception(f"Error loading template file {template_path}: {e}")
+        except Exception as e:
+            raise Exception(f"Error loading providers.json: {e}")
+                
 
     def _write_providers_json(data: dict) -> None:
         os.makedirs(os.path.dirname(PROVIDERS_JSON_PATH), exist_ok=True)
@@ -703,13 +741,6 @@ def create_app() -> Flask:
                 {"name": "top_k", "type": "integer", "min": 1, "max": 100, "step": 1, "default": 40, "label": "Top K"},
                 {"name": "max_tokens", "type": "integer", "min": 1, "max": 8192, "step": 1, "default": 2048, "label": "Max Tokens"},
             ]
-        elif provider == "ollama":
-            params = [
-                {"name": "temperature", "type": "number", "min": 0, "max": 2, "step": 0.01, "default": 0.8, "label": "Temperature"},
-                {"name": "top_p", "type": "number", "min": 0, "max": 1, "step": 0.01, "default": 0.9, "label": "Top P"},
-                {"name": "top_k", "type": "integer", "min": 1, "max": 100, "step": 1, "default": 40, "label": "Top K"},
-                {"name": "max_tokens", "type": "integer", "min": 1, "max": 8192, "step": 1, "default": 2048, "label": "Max Tokens"},
-            ]
         else:
             return jsonify({"error": "unknown provider"}), 400
 
@@ -729,21 +760,33 @@ def _initialize_ollama_with_app(app_instance):
             "PROVIDERS_JSON_PATH", os.path.join(app_instance.root_path, "static", "providers.json")
         )
 
-        def _load_providers_json() -> dict:
-            try:
-                with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except FileNotFoundError:
-                return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
-            except Exception:
-                return {"providers": [], "favorites": [], "default": {"provider": None, "model": None}}
-
         def _write_providers_json(data: dict) -> None:
             os.makedirs(os.path.dirname(PROVIDERS_JSON_PATH), exist_ok=True)
             tmp_path = PROVIDERS_JSON_PATH + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
             os.replace(tmp_path, PROVIDERS_JSON_PATH)
+
+        def _load_providers_json() -> dict:
+            try:
+                with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except FileNotFoundError:
+                # If providers.json doesn't exist, try to copy from providers_template.json
+                template_path = os.path.join(os.path.dirname(PROVIDERS_JSON_PATH), "providers_template.json")
+                try:
+                    with open(template_path, "r", encoding="utf-8") as f:
+                        template_data = json.load(f)
+                    # Copy template to providers.json
+                    _write_providers_json(template_data)
+                    print(f"Created providers.json from template: {template_path}")
+                    return template_data
+                except FileNotFoundError:
+                    raise FileNotFoundError(f"Required template file not found: {template_path}. Cannot initialize providers configuration.")
+                except Exception as e:
+                    raise Exception(f"Error loading template file {template_path}: {e}")
+            except Exception as e:
+                raise Exception(f"Error loading providers.json: {e}")
 
         # Load current providers data
         data = _load_providers_json()
@@ -754,8 +797,10 @@ def _initialize_ollama_with_app(app_instance):
         
         # Check if Ollama is available and get models
         if is_ollama_available():
+            print("Ollama detected, attempting to start server...")
             # Try to start Ollama server if not running
             if start_ollama_server():
+                print("Ollama server started successfully.")
                 # Get available models
                 models = get_ollama_models()
                 if models:
@@ -768,11 +813,11 @@ def _initialize_ollama_with_app(app_instance):
                     providers.append(ollama_provider)
                     print(f"Added Ollama provider with {len(models)} models to providers.json: {models}")
                 else:
-                    print("Ollama server running but no models found")
+                    print("Ollama server running but no models found - not adding Ollama provider")
             else:
-                print("Failed to start Ollama server")
+                print("Failed to start Ollama server - not adding Ollama provider")
         else:
-            print("Ollama not available - removed from providers.json if it was there")
+            print("Ollama not available on this system - not adding Ollama provider")
         
         # Update providers data and save
         data["providers"] = providers

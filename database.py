@@ -300,3 +300,33 @@ def delete_chat(chat_id: int) -> None:
     # Delete messages first to be safe regardless of PRAGMA being applied
     db.execute("DELETE FROM messages WHERE chat_id = ?", (chat_id,))
     db.execute("DELETE FROM chats WHERE id = ?", (chat_id,))
+
+
+def count_all_history() -> dict[str, int]:
+    """Count total number of chats and messages in the database.
+    
+    Returns:
+        Dictionary with 'chats' and 'messages' counts.
+    """
+    db = get_db()
+    chat_count = db.execute("SELECT COUNT(*) FROM chats").fetchone()[0]
+    message_count = db.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+    return {"chats": chat_count, "messages": message_count}
+
+
+def delete_all_history() -> dict[str, int]:
+    """Delete all chats and messages from the database.
+    
+    Returns:
+        Dictionary with counts of deleted 'chats' and 'messages'.
+    """
+    db = get_db()
+    
+    # Get counts before deletion
+    counts = count_all_history()
+    
+    # Delete all messages first, then all chats
+    db.execute("DELETE FROM messages")
+    db.execute("DELETE FROM chats")
+    
+    return counts

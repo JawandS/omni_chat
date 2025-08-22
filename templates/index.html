@@ -195,6 +195,9 @@ Omni Chat
     } catch (_) {}
   }
 
+  // Make loadBlacklist available globally so settings modal can refresh the cache
+  window.loadBlacklist = loadBlacklist;
+
   function checkBlacklist(message) {
     if (!blacklistCache.length) return [];
     
@@ -272,10 +275,15 @@ Omni Chat
     const p = providers.find(x => x.id === providerEl.value);
     const models = p ? p.models : [];
     modelEl.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('') || '<option>No models</option>';
-    // If default model matches current provider select it
+    
+    // If default model matches current provider, select it
     if (defaultSelection.provider === providerEl.value && defaultSelection.model && models.includes(defaultSelection.model)) {
       modelEl.value = defaultSelection.model;
+    } else if (models.length > 0) {
+      // If no default match, select the first available model
+      modelEl.value = models[0];
     }
+    
     updateFavoriteStar();
   // Reload model parameter schema when model changes
   fetchModelConfig();
@@ -513,6 +521,19 @@ Omni Chat
     chatTitleEl.value = '';
     messagesEl.innerHTML = '';
     history = [];
+    
+    // Ensure provider and model are set to valid defaults
+    if (!providerEl.value || !modelEl.value) {
+      // Re-apply defaults or fallbacks
+      if (defaultSelection.provider && providers.some(p => p.id === defaultSelection.provider)) {
+        providerEl.value = defaultSelection.provider;
+        populateModels(); // This will set the model
+      } else if (providers.length > 0) {
+        providerEl.value = providers[0].id;
+        populateModels(); // This will set the model
+      }
+    }
+    
     appendMessage('assistant', 'New chat started. How can I help?');
   }
 
@@ -550,7 +571,9 @@ Omni Chat
     }
     
     // Check for blacklisted words
+    console.log('[FRONTEND] About to check blacklist. Cache:', blacklistCache, 'Message:', message);
     const detected = checkBlacklist(message);
+    console.log('[FRONTEND] Detected words:', detected);
     if (detected.length > 0) {
       console.log('[FRONTEND] Blacklisted words detected:', detected);
       showBlacklistModal(detected);
@@ -670,7 +693,6 @@ Omni Chat
                 
                 // Append token to the streaming content
                 fullReply += data.token;
-                console.log('[FRONTEND] Full reply so far:', JSON.stringify(fullReply));
                 if (streamingContent) {
                   streamingContent.textContent = fullReply;
                   messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -798,12 +820,52 @@ Omni Chat
   });
 
   clearHistoryEl?.addEventListener('click', async () => {
-    // Soft clear: start new chat view, leave DB intact
-    startNewChat();
+    try {
+      // First, get the count of chats and messages
+      const countRes = await fetch('/api/chats/count');
+      if (!countRes.ok) {
+        showToast('Failed to get history count');
+        return;
+      }
+      
+      const counts = await countRes.json();
+      const totalItems = counts.chats + counts.messages;
+      
+      if (totalItems === 0) {
+        showToast('No history to clear');
+        return;
+      }
+      
+      // Show confirmation dialog with detailed count
+      const message = `Are you sure you want to delete ALL chat history?\n\nThis will permanently delete:\n• ${counts.chats} chat${counts.chats !== 1 ? 's' : ''}\n• ${counts.messages} message${counts.messages !== 1 ? 's' : ''}\n\nThis action cannot be undone.`;
+      
+      if (!confirm(message)) {
+        return;
+      }
+      
+      // User confirmed, proceed with deletion
+      const deleteRes = await fetch('/api/chats', { method: 'DELETE' });
+      if (deleteRes.ok) {
+        const result = await deleteRes.json();
+        const deleted = result.deleted;
+        showToast(`Deleted ${deleted.chats} chats and ${deleted.messages} messages`);
+        
+        // Reset UI to new chat state
+        currentChatId = null;
+        startNewChat();
+        loadHistory();
+      } else {
+        showToast('Failed to clear history');
+      }
+    } catch (e) {
+      showToast('Error clearing history');
+      console.error('Clear history error:', e);
+    }
   });
 
   loadProviders();
   loadHistory();
+  loadBlacklist(); // Ensure blacklist is loaded
 </script>
 {% endblock %}
 

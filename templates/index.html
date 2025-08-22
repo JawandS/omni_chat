@@ -550,7 +550,6 @@ Omni Chat
                 
                 // Append token to the streaming content
                 fullReply += data.token;
-                console.log('[FRONTEND] Full reply so far:', JSON.stringify(fullReply));
                 if (streamingContent) {
                   streamingContent.textContent = fullReply;
                   messagesEl.scrollTop = messagesEl.scrollHeight;

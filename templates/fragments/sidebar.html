@@ -1,0 +1,29 @@
+<!-- Sidebar: conversations (projects + chats) -->
+<aside class="hidden md:block col-span-3 min-h-0">
+  <div class="h-full min-h-0 rounded-xl border border-white/10 bg-white/5 flex flex-col">
+    <!-- Conversations content - scrollable -->
+    <div class="flex-1 min-h-0 overflow-auto">
+      <!-- Projects card -->
+      <div class="p-3 border-b border-white/10">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white/80">Projects</span>
+          <button id="new-project" class="text-xs text-primary-400 hover:text-primary-300" title="New Project">+ New Project</button>
+        </div>
+        <div id="projects-list" class="space-y-1">
+          <!-- Projects will be loaded here -->
+        </div>
+      </div>
+      
+      <!-- Chats card -->
+      <div class="p-3">
+        <div class="flex items-center justify-between mb-2">
+          <span class="text-sm font-medium text-white/80">Chats</span>
+          <button id="new-chat-sidebar" class="text-xs text-primary-400 hover:text-primary-300" title="New Chat">+ New Chat</button>
+        </div>
+        <div id="chats-list" class="space-y-1">
+          <!-- Chats will be loaded here -->
+        </div>
+      </div>
+    </div>
+  </div>
+</aside>

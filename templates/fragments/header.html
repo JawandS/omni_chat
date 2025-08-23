@@ -1,0 +1,50 @@
+<!-- Top bar: provider + model selectors + centered title -->
+<div class="rounded-xl border border-white/10 bg-white/5 p-3 md:p-4 mb-3 md:mb-4">
+  <div class="flex items-center gap-3">
+    <!-- Favorites dropdown -->
+    <div class="flex items-center gap-2">
+      <div class="relative w-24"> <!-- fixed width to prevent expansion -->
+        <select id="favorite-model" class="w-full appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-6 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition truncate" aria-label="Favorite model quick select">
+          <option value="" disabled selected>Favorites</option>
+        </select>
+        <span class="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-white/70">▾</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <label for="provider" class="text-sm text-white/70">Provider</label>
+      <div class="relative">
+        <select id="provider" data-testid="provider-select" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition">
+          <option>Loading…</option>
+        </select>
+        <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-white/70">▾</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <label for="model" class="text-sm text-white/70">Model</label>
+      <div class="relative">
+        <div class="relative">
+          <select id="model" data-testid="model-select" class="appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-28 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition min-w-48">
+            <option>Select provider first</option>
+          </select>
+          <span class="pointer-events-none absolute right-20 top-1/2 -translate-y-1/2 text-white/70" style="right:4.75rem">▾</span>
+          <button id="toggle-favorite" title="Toggle favorite" class="absolute right-12 top-1/2 -translate-y-1/2 text-white/40 hover:text-yellow-400 transition" aria-label="Toggle favorite">☆</button>
+          <button id="model-config-btn" title="Configure model parameters" class="absolute right-1 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 text-white/70 hover:text-white transition" aria-label="Configure model">
+            <!-- Gear icon (SVG) -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-4 h-4"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.757.426 1.757 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.757-2.924 1.757-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.757-.426-1.757-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.607 2.296.07 2.573-1.065Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- Centered title -->
+    <div class="flex-1 flex justify-center">
+      <input id="chat-title" type="text" placeholder="Untitled chat" class="w-56 md:w-80 text-center rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 placeholder-white/40" />
+    </div>
+    <div class="ms-auto flex items-center gap-2">
+      <button id="new-chat" class="inline-flex items-center rounded-lg bg-primary-600 hover:bg-primary-500 focus:ring-4 focus:ring-primary-400/40 px-4 py-2 text-sm font-medium transition">New Chat</button>
+      <button id="delete-chat" class="inline-flex items-center rounded-lg bg-red-600 hover:bg-red-500 focus:ring-4 focus:ring-red-400/40 px-3 py-2 text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed" title="Delete current chat">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Warning toast -->
+<div id="toast" class="hidden mb-2 rounded-lg bg-yellow-500/20 border border-yellow-400/30 text-yellow-200 text-sm px-3 py-2"></div>

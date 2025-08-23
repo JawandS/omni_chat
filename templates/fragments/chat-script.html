@@ -1,0 +1,1136 @@
+<!-- Main Chat Application JavaScript -->
+<script>
+  const providerEl = document.getElementById('provider');
+  const favoriteModelEl = document.getElementById('favorite-model');
+  const modelEl = document.getElementById('model');
+  const toggleFavoriteBtn = document.getElementById('toggle-favorite');
+  const messagesEl = document.getElementById('messages');
+  const composerEl = document.getElementById('composer');
+  const inputEl = document.getElementById('input');
+  const newChatEl = document.getElementById('new-chat');
+  const newChatSidebarEl = document.getElementById('new-chat-sidebar');
+  const projectsListEl = document.getElementById('projects-list');
+  const chatsListEl = document.getElementById('chats-list');
+  const clearHistoryEl = document.getElementById('clear-history');
+  const chatTitleEl = document.getElementById('chat-title');
+  const deleteChatEl = document.getElementById('delete-chat');
+  const toastEl = document.getElementById('toast');
+  const modelConfigBtn = document.getElementById('model-config-btn');
+  const configOverlay = document.getElementById('config-overlay');
+  const configModal = document.getElementById('config-modal');
+  const closeConfigBtn = document.getElementById('close-config');
+  const closeConfigFooterBtn = document.getElementById('close-config-footer');
+  const applyConfigBtn = document.getElementById('apply-config');
+  const configBody = document.getElementById('config-body');
+  const resetConfigBtn = document.getElementById('reset-config');
+  
+  // Blacklist modal elements
+  const blacklistOverlay = document.getElementById('blacklist-overlay');
+  const blacklistModal = document.getElementById('blacklist-modal');
+  const detectedWords = document.getElementById('detected-words');
+  const blacklistCancel = document.getElementById('blacklist-cancel');
+  const blacklistProceed = document.getElementById('blacklist-proceed');
+
+  // Project modal elements
+  const newProjectBtn = document.getElementById('new-project');
+  const projectOverlay = document.getElementById('project-overlay');
+  const projectModal = document.getElementById('project-modal');
+  const projectNameInput = document.getElementById('project-name');
+  const projectCancelBtn = document.getElementById('project-cancel');
+  const projectCreateBtn = document.getElementById('project-create');
+
+  // Chat actions modal elements
+  const chatActionsOverlay = document.getElementById('chat-actions-overlay');
+  const chatActionsModal = document.getElementById('chat-actions-modal');
+  const deleteChatActionBtn = document.getElementById('delete-chat-action');
+  const projectSelectEl = document.getElementById('project-select');
+  const createNewProjectForChatBtn = document.getElementById('create-new-project-for-chat');
+  const chatActionsCancelBtn = document.getElementById('chat-actions-cancel');
+
+  // Delete project modal elements
+  const deleteProjectOverlay = document.getElementById('delete-project-overlay');
+  const deleteProjectModal = document.getElementById('delete-project-modal');
+  const deleteProjectNameEl = document.getElementById('delete-project-name');
+  const deleteProjectCancelBtn = document.getElementById('delete-project-cancel');
+  const deleteProjectConfirmBtn = document.getElementById('delete-project-confirm');
+
+  // In-memory current param values keyed by name
+  let currentParams = {};
+  let defaultParams = {};
+  let blacklistCache = [];
+  function showToast(msg) {
+    if (!msg) return;
+    toastEl.textContent = msg;
+    toastEl.classList.remove('hidden');
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toastEl.classList.add('hidden'), 4000);
+  }
+
+  // Blacklist functions
+  async function loadBlacklist() {
+    try {
+      const res = await fetch('/api/blacklist');
+      if (res.ok) {
+        const data = await res.json();
+        blacklistCache = data.blacklist || [];
+      }
+    } catch (_) {}
+  }
+
+  // Make loadBlacklist available globally so settings modal can refresh the cache
+  window.loadBlacklist = loadBlacklist;
+
+  // Listen for blacklist update events
+  window.addEventListener('blacklistUpdated', (event) => {
+    blacklistCache = event.detail || [];
+  });
+
+  // Universal blacklist API wrapper that automatically updates cache
+  window.blacklistAPI = {
+    async add(word) {
+      try {
+        const r = await fetch('/api/blacklist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ word })
+        });
+        if (r.ok) {
+          const data = await r.json();
+          if (r.headers.get('X-Blacklist-Updated') === 'true') {
+            blacklistCache = data.blacklist || [];
+            window.dispatchEvent(new CustomEvent('blacklistUpdated', { detail: data.blacklist }));
+          }
+          return data;
+        }
+      } catch (e) {
+        console.error('[FRONTEND] Error adding blacklist word:', e);
+      }
+      return null;
+    },
+    
+    async remove(word) {
+      try {
+        const r = await fetch(`/api/blacklist?word=${encodeURIComponent(word)}`, {
+          method: 'DELETE'
+        });
+        if (r.ok) {
+          const data = await r.json();
+          if (r.headers.get('X-Blacklist-Updated') === 'true') {
+            blacklistCache = data.blacklist || [];
+            window.dispatchEvent(new CustomEvent('blacklistUpdated', { detail: data.blacklist }));
+          }
+          return data;
+        }
+      } catch (e) {
+        console.error('[FRONTEND] Error removing blacklist word:', e);
+      }
+      return null;
+    }
+  };
+
+  function checkBlacklist(message) {
+    if (!blacklistCache.length) return [];
+    
+    const messageLower = message.toLowerCase();
+    const detectedWords = [];
+    
+    for (const word of blacklistCache) {
+      if (messageLower.includes(word.toLowerCase())) {
+        detectedWords.push(word);
+      }
+    }
+    
+    return detectedWords;
+  }
+
+  function showBlacklistModal(words) {
+    detectedWords.innerHTML = words.map(word => 
+      `<span class="inline-block bg-red-600/20 text-red-300 px-2 py-1 rounded text-sm mr-2 mb-1">${escapeHtml(word)}</span>`
+    ).join('');
+    
+    blacklistOverlay.classList.remove('pointer-events-none');
+    requestAnimationFrame(() => {
+      blacklistOverlay.classList.add('opacity-100');
+      blacklistModal.classList.add('opacity-100', 'scale-100');
+    });
+  }
+
+  function hideBlacklistModal() {
+    blacklistOverlay.classList.add('pointer-events-none');
+    blacklistOverlay.classList.remove('opacity-100');
+    blacklistModal.classList.remove('opacity-100', 'scale-100');
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  let providers = [];
+  let favorites = [];
+  let defaultSelection = { provider: null, model: null };
+  let history = [];
+  let currentChatId = null;
+  let currentProjectId = null; // Currently selected project filter (null = unassigned chats)
+  let projects = [];
+  let chats = [];
+  let currentChatForActions = null; // Chat being acted upon in the actions modal
+  let currentProjectForDeletion = null; // Project being deleted in the delete modal
+  let isSubmitting = false; // Flag to prevent duplicate submissions
+
+  async function loadProviders() {
+    try {
+      const res = await fetch('/api/providers-config', { cache: 'no-store' });
+      const data = await res.json();
+      providers = data.providers || [];
+      favorites = data.favorites || [];
+      defaultSelection = data.default || { provider: null, model: null };
+      providerEl.innerHTML = providers.map(p => `<option value="${p.id}">${p.name}</option>`).join('');
+      if (defaultSelection.provider && providers.some(p => p.id === defaultSelection.provider)) {
+        providerEl.value = defaultSelection.provider;
+      } else if (providers.length) {
+        providerEl.value = providers[0].id;
+      }
+      populateModels();
+      populateFavoritesDropdown();
+      // Also load blacklist cache
+      loadBlacklist();
+    } catch (e) {
+      // Fallback
+      providers = [{ id: 'openai', name: 'OpenAI', models: ['gpt-4o-mini'] }];
+      providerEl.innerHTML = `<option value="openai">OpenAI</option>`;
+      populateModels();
+      // Still try to load blacklist on fallback
+      loadBlacklist();
+    }
+  }
+
+  function populateModels() {
+    const p = providers.find(x => x.id === providerEl.value);
+    const models = p ? p.models : [];
+    modelEl.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('') || '<option>No models</option>';
+    
+    // If default model matches current provider, select it
+    if (defaultSelection.provider === providerEl.value && defaultSelection.model && models.includes(defaultSelection.model)) {
+      modelEl.value = defaultSelection.model;
+    } else if (models.length > 0) {
+      // If no default match, select the first available model
+      modelEl.value = models[0];
+    }
+    
+    updateFavoriteStar();
+  // Reload model parameter schema when model changes
+  fetchModelConfig();
+  }
+  function populateFavoritesDropdown() {
+    const options = ['<option value="" disabled>Favorites</option>'];
+    for (const fav of favorites) {
+      // Split only on first colon to handle model names with colons (like ollama:model:tag)
+      const colonIndex = fav.indexOf(':');
+      if (colonIndex !== -1) {
+        const prov = fav.substring(0, colonIndex);
+        const model = fav.substring(colonIndex + 1);
+        options.push(`<option value="${fav}">${prov}:${model}</option>`);
+      }
+    }
+    favoriteModelEl.innerHTML = options.join('');
+    // Always ensure placeholder is selected after repopulation
+    favoriteModelEl.selectedIndex = 0;
+  }
+
+  favoriteModelEl.addEventListener('change', () => {
+    const val = favoriteModelEl.value;
+    if (!val) return;
+    
+    // Split only on the first colon to handle model names with colons (like ollama:model:tag)
+    const colonIndex = val.indexOf(':');
+    if (colonIndex === -1) return;
+    
+    const prov = val.substring(0, colonIndex);
+    const model = val.substring(colonIndex + 1);
+    
+    if (prov && model) {
+      providerEl.value = prov;
+      populateModels();
+      
+      // Check if the model is available in the models list before setting it
+      const modelOptions = Array.from(modelEl.options).map(opt => opt.value);
+      if (modelOptions.includes(model)) {
+        modelEl.value = model;
+      } else {
+        console.warn(`Model "${model}" not found in provider "${prov}" models:`, modelOptions);
+      }
+      
+      updateFavoriteStar();
+      // Reset dropdown back to placeholder so selection doesn't persist visually
+      favoriteModelEl.selectedIndex = 0;
+    }
+  });
+
+  function updateFavoriteStar() {
+    const key = `${providerEl.value}:${modelEl.value}`;
+    if (favorites.includes(key)) {
+      toggleFavoriteBtn.textContent = '★';
+      toggleFavoriteBtn.classList.add('text-yellow-400');
+    } else {
+      toggleFavoriteBtn.textContent = '☆';
+      toggleFavoriteBtn.classList.remove('text-yellow-400');
+    }
+  }
+
+  toggleFavoriteBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    const provider = providerEl.value;
+    const model = modelEl.value;
+    const key = `${provider}:${model}`;
+    try {
+      if (favorites.includes(key)) {
+        await fetch(`/api/favorites?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`, { method: 'DELETE' });
+        favorites = favorites.filter(f => f !== key);
+      } else {
+        await fetch('/api/favorites', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider, model }) });
+        favorites.push(key);
+      }
+      populateFavoritesDropdown();
+      updateFavoriteStar();
+    } catch (err) {
+      showToast('Favorite update failed');
+    }
+  });
+
+  modelEl.addEventListener('change', () => {
+    updateFavoriteStar();
+  fetchModelConfig();
+  });
+
+  providerEl.addEventListener('change', () => {
+    populateModels();
+  fetchModelConfig();
+  });
+  function openConfigModal() {
+    configOverlay.classList.remove('pointer-events-none');
+    requestAnimationFrame(() => {
+      configOverlay.classList.add('opacity-100');
+      configModal.classList.add('opacity-100','scale-100');
+    });
+    fetchModelConfig();
+  }
+  function closeConfigModal() {
+    configOverlay.classList.add('pointer-events-none');
+    configOverlay.classList.remove('opacity-100');
+    configModal.classList.remove('opacity-100','scale-100');
+  }
+  modelConfigBtn.addEventListener('click', (e) => { e.preventDefault(); openConfigModal(); });
+  closeConfigBtn.addEventListener('click', () => closeConfigModal());
+  closeConfigFooterBtn.addEventListener('click', () => closeConfigModal());
+  applyConfigBtn.addEventListener('click', () => closeConfigModal());
+  configOverlay.addEventListener('click', (e) => { if (e.target === configOverlay) closeConfigModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeConfigModal(); });
+  resetConfigBtn.addEventListener('click', (e) => { e.preventDefault(); currentParams = { ...defaultParams }; renderParamsForm(); });
+
+  async function fetchModelConfig() {
+    const provider = providerEl.value;
+    const model = modelEl.value;
+    if (!provider || !model) return;
+    try {
+      const res = await fetch(`/api/model-config?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`);
+      if (!res.ok) throw new Error('config fetch failed');
+      const data = await res.json();
+      const params = data.params || [];
+      defaultParams = {};
+      params.forEach(p => { defaultParams[p.name] = p.default; });
+      // Preserve any existing values for parameters when switching models within same provider if names overlap
+      currentParams = Object.fromEntries(Object.entries(defaultParams).map(([k,v]) => [k, (k in currentParams) ? currentParams[k] : v]));
+      renderParamsForm(params);
+    } catch (e) {
+      configBody.innerHTML = '<p class="text-red-300 text-sm">Failed to load model configuration.</p>';
+    }
+  }
+
+  function renderParamsForm(paramsMeta) {
+    paramsMeta = paramsMeta || [];
+    if (!paramsMeta.length) {
+      configBody.innerHTML = '<p class="text-white/50 text-sm">No configurable parameters for this model.</p>';
+      return;
+    }
+    const fields = paramsMeta.map(meta => {
+      const val = currentParams[meta.name];
+      if (meta.type === 'number' || meta.type === 'integer') {
+        return `<label class="block space-y-1">
+          <div class="flex justify-between"><span>${meta.label || meta.name}</span><span class="text-white/40 text-xs" id="val-${meta.name}">${val}</span></div>
+          <input type="range" data-param="${meta.name}" min="${meta.min}" max="${meta.max}" step="${meta.step}" value="${val}" class="w-full accent-primary-400" />
+        </label>`;
+      } else if (meta.type === 'select') {
+        const opts = (meta.options||[]).map(o => `<option value="${o}" ${o===val?'selected':''}>${o}</option>`).join('');
+        return `<label class="block space-y-1">
+          <div class="flex justify-between"><span>${meta.label || meta.name}</span></div>
+          <select data-param="${meta.name}" class="w-full bg-white/10 border border-white/10 rounded px-2 py-1 text-sm">${opts}</select>
+        </label>`;
+      } else if (meta.type === 'boolean') {
+        return `<label class="flex items-center gap-2">
+          <input type="checkbox" data-param="${meta.name}" ${val? 'checked':''} class="accent-primary-400" />
+          <span>${meta.label || meta.name}</span>
+        </label>`;
+      } else if (meta.type === 'string') {
+        return `<label class="block space-y-1">
+          <div class="flex justify-between"><span>${meta.label || meta.name}</span></div>
+          <input type="text" data-param="${meta.name}" value="${val || ''}" placeholder="${meta.placeholder || ''}" class="w-full bg-white/10 border border-white/10 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40" />
+          ${meta.hint ? `<p class='text-[10px] text-white/40'>${meta.hint}</p>`: ''}
+        </label>`;
+      }
+      return '';
+    }).join('<div class="h-2"></div>');
+    configBody.innerHTML = `<form id="params-form" class="space-y-4">${fields}</form>`;
+    const form = document.getElementById('params-form');
+    form.querySelectorAll('[data-param]').forEach(el => {
+      el.addEventListener('input', () => {
+        const name = el.getAttribute('data-param');
+        let value;
+        if (el.type === 'checkbox') value = el.checked;
+        else if (el.tagName === 'SELECT') value = el.value;
+        else if (el.type === 'range') value = parseFloat(el.value);
+        currentParams[name] = value;
+        const valLabel = document.getElementById(`val-${name}`);
+        if (valLabel) valLabel.textContent = value;
+      });
+    });
+  }
+  // remove old listener already replaced
+
+  async function loadProjects() {
+    try {
+      const res = await fetch('/api/projects', { cache: 'no-store' });
+      const data = await res.json();
+      projects = data.projects || [];
+      renderProjects();
+    } catch (e) {
+      console.error('Failed to load projects:', e);
+    }
+  }
+
+  async function loadChats() {
+    try {
+      // Load chats filtered by current project
+      const url = currentProjectId !== null 
+        ? `/api/chats/by-project?project_id=${currentProjectId}`
+        : '/api/chats/by-project';
+      const res = await fetch(url, { cache: 'no-store' });
+      const data = await res.json();
+      chats = data.chats || [];
+      renderChats();
+    } catch (e) {
+      console.error('Failed to load chats:', e);
+    }
+  }
+
+  function renderProjects() {
+    projectsListEl.innerHTML = '';
+    
+    if (!projects.length) {
+      const empty = document.createElement('div');
+      empty.className = 'text-white/60 text-xs';
+      empty.textContent = 'No projects yet.';
+      projectsListEl.appendChild(empty);
+      return;
+    }
+
+    // Show first 3 projects, then "show more" for the rest
+    const visibleProjects = projects.slice(0, 3);
+    const hiddenProjects = projects.slice(3);
+
+    visibleProjects.forEach(project => {
+      projectsListEl.appendChild(createProjectElement(project));
+    });
+
+    if (hiddenProjects.length > 0) {
+      const showMoreBtn = document.createElement('button');
+      showMoreBtn.className = 'w-full text-left px-2 py-1 text-xs text-white/60 hover:text-white transition';
+      showMoreBtn.textContent = `Show ${hiddenProjects.length} more...`;
+      showMoreBtn.addEventListener('click', () => {
+        showMoreBtn.remove();
+        hiddenProjects.forEach(project => {
+          projectsListEl.appendChild(createProjectElement(project));
+        });
+      });
+      projectsListEl.appendChild(showMoreBtn);
+    }
+  }
+
+  function createProjectElement(project) {
+    const projectEl = document.createElement('div');
+    projectEl.className = `relative flex items-center gap-2 px-2 py-1 rounded text-sm cursor-pointer hover:bg-white/10 transition ${
+      currentProjectId === project.id ? 'bg-primary-600/20 text-primary-300' : 'text-white/80'
+    }`;
+    
+    projectEl.innerHTML = `
+      <span class="flex-1 truncate" onclick="selectProject(${project.id})">${escapeHtml(project.name)}</span>
+      <span class="text-xs text-white/40">${project.chat_count || 0}</span>
+      <button class="text-white/40 hover:text-white opacity-0 group-hover:opacity-100 transition text-xs" onclick="showProjectMenu(event, ${project.id})" title="Project actions">⋮</button>
+    `;
+    
+    // Add hover effect to show the menu button
+    projectEl.addEventListener('mouseenter', () => {
+      const btn = projectEl.querySelector('button');
+      btn.style.opacity = '1';
+    });
+    projectEl.addEventListener('mouseleave', () => {
+      const btn = projectEl.querySelector('button');
+      btn.style.opacity = '0';
+    });
+
+    return projectEl;
+  }
+
+  function renderChats() {
+    chatsListEl.innerHTML = '';
+    
+    if (!chats.length) {
+      const empty = document.createElement('div');
+      empty.className = 'text-white/60 text-xs';
+      empty.textContent = currentProjectId !== null 
+        ? 'No chats in this project yet.'
+        : 'No unassigned chats yet.';
+      chatsListEl.appendChild(empty);
+      return;
+    }
+
+    chats.forEach(chat => {
+      chatsListEl.appendChild(createChatElement(chat));
+    });
+  }
+
+  function createChatElement(chat) {
+    const chatEl = document.createElement('div');
+    chatEl.className = `relative flex items-center gap-2 px-2 py-1 rounded text-sm cursor-pointer hover:bg-white/10 transition ${
+      currentChatId === chat.id ? 'bg-primary-600/20 text-primary-300' : 'text-white/80'
+    }`;
+    
+    chatEl.innerHTML = `
+      <span class="flex-1 truncate" onclick="openChat(${chat.id})">${escapeHtml(chat.title || 'Untitled')}</span>
+      <span class="text-xs text-white/40">${escapeHtml(chat.provider || '')}</span>
+      <button class="text-white/40 hover:text-white opacity-0 transition text-xs" onclick="showChatActions(event, ${chat.id})" title="Chat actions">⋮</button>
+    `;
+    
+    // Add hover effect to show the menu button
+    chatEl.addEventListener('mouseenter', () => {
+      const btn = chatEl.querySelector('button');
+      btn.style.opacity = '1';
+    });
+    chatEl.addEventListener('mouseleave', () => {
+      const btn = chatEl.querySelector('button');
+      btn.style.opacity = '0';
+    });
+
+    return chatEl;
+  }
+
+  function selectProject(projectId) {
+    // Toggle selection: if clicking the same project, deselect it
+    if (currentProjectId === projectId) {
+      currentProjectId = null;
+    } else {
+      currentProjectId = projectId;
+    }
+    loadChats();
+    renderProjects(); // Re-render to update selection highlighting
+  }
+
+  async function openChat(id) {
+    try {
+      const res = await fetch(`/api/chats/${id}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const chat = data.chat;
+      const msgs = data.messages || [];
+      currentChatId = chat.id;
+      chatTitleEl.value = chat.title || '';
+      providerEl.value = chat.provider || providerEl.value;
+      populateModels();
+      if (chat.model) modelEl.value = chat.model;
+      messagesEl.innerHTML = '';
+      history = [];
+      for (const m of msgs) {
+        appendMessage(m.role, m.content, m.provider, m.model);
+        history.push({ role: m.role, content: m.content });
+      }
+      renderChats(); // Re-render to update selection highlighting
+    } catch (e) {
+      console.error('Failed to open chat:', e);
+    }
+  }
+
+  function startNewChat() {
+    currentChatId = null;
+    chatTitleEl.value = '';
+    messagesEl.innerHTML = '';
+    history = [];
+    
+    // Ensure provider and model are set to valid defaults
+    if (!providerEl.value || !modelEl.value) {
+      // Re-apply defaults or fallbacks
+      if (defaultSelection.provider && providers.some(p => p.id === defaultSelection.provider)) {
+        providerEl.value = defaultSelection.provider;
+        populateModels(); // This will set the model
+      } else if (providers.length > 0) {
+        providerEl.value = providers[0].id;
+        populateModels(); // This will set the model
+      }
+    }
+    
+    appendMessage('assistant', 'New chat started. How can I help?');
+    renderChats(); // Update sidebar to reflect current selection
+  }
+
+  function appendMessage(role, text, provider = null, model = null, isError = false) {
+    const isUser = role === 'user';
+    const wrapper = document.createElement('div');
+    wrapper.className = `flex items-start gap-3 ${isUser ? 'justify-end' : ''}`;
+    const badge = provider && model ? `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>` : '';
+    wrapper.innerHTML = `
+      ${isUser ? '' : '<div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>'}
+      <div class="max-w-3xl">${badge}<div class="rounded-xl border ${isError ? 'border-red-400/60 bg-red-500/10' : 'border-white/10 ' + (isUser ? 'bg-primary-600/20' : 'bg-white/5')} p-3">${escapeHtml(text)}</div></div>
+    `;
+    messagesEl.appendChild(wrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/[&<>"]+/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  // Project management functions
+  function showProjectModal() {
+    projectNameInput.value = '';
+    projectOverlay.style.opacity = '1';
+    projectOverlay.style.pointerEvents = 'auto';
+    projectModal.style.opacity = '1';
+    projectModal.style.transform = 'scale(1)';
+    projectNameInput.focus();
+  }
+
+  function hideProjectModal() {
+    projectOverlay.style.opacity = '0';
+    projectOverlay.style.pointerEvents = 'none';
+    projectModal.style.opacity = '0';
+    projectModal.style.transform = 'scale(0.95)';
+  }
+
+  async function createProject() {
+    const name = projectNameInput.value.trim();
+    if (!name) return;
+
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+
+      if (res.ok) {
+        hideProjectModal();
+        loadProjects();
+        showToast('Project created successfully');
+      } else {
+        const data = await res.json();
+        showToast(data.error || 'Failed to create project');
+      }
+    } catch (e) {
+      showToast('Failed to create project');
+    }
+  }
+
+  function showProjectMenu(event, projectId) {
+    event.stopPropagation();
+    // Find the project name for display in modal
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    currentProjectForDeletion = projectId;
+    deleteProjectNameEl.textContent = `Project: ${project.name}`;
+    showDeleteProjectModal();
+  }
+
+  async function deleteProject(projectId) {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+      if (res.ok) {
+        // If the deleted project was selected, reset to unassigned chats
+        if (currentProjectId === projectId) {
+          currentProjectId = null;
+          loadChats();
+        }
+        loadProjects();
+        showToast('Project deleted successfully');
+      } else {
+        showToast('Failed to delete project');
+      }
+    } catch (e) {
+      showToast('Failed to delete project');
+    }
+  }
+
+  // Delete project modal functions
+  function showDeleteProjectModal() {
+    deleteProjectOverlay.style.opacity = '1';
+    deleteProjectOverlay.style.pointerEvents = 'auto';
+    deleteProjectModal.style.opacity = '1';
+    deleteProjectModal.style.transform = 'scale(1)';
+  }
+
+  function hideDeleteProjectModal() {
+    deleteProjectOverlay.style.opacity = '0';
+    deleteProjectOverlay.style.pointerEvents = 'none';
+    deleteProjectModal.style.opacity = '0';
+    deleteProjectModal.style.transform = 'scale(0.95)';
+    currentProjectForDeletion = null;
+  }
+
+  function confirmDeleteProject() {
+    if (currentProjectForDeletion) {
+      deleteProject(currentProjectForDeletion);
+      hideDeleteProjectModal();
+    }
+  }
+
+  // Chat actions functions
+  function showChatActions(event, chatId) {
+    event.stopPropagation();
+    currentChatForActions = chatId;
+    loadProjectsForSelect();
+    showChatActionsModal();
+  }
+
+  function showChatActionsModal() {
+    chatActionsOverlay.style.opacity = '1';
+    chatActionsOverlay.style.pointerEvents = 'auto';
+    chatActionsModal.style.opacity = '1';
+    chatActionsModal.style.transform = 'scale(1)';
+  }
+
+  function hideChatActionsModal() {
+    chatActionsOverlay.style.opacity = '0';
+    chatActionsOverlay.style.pointerEvents = 'none';
+    chatActionsModal.style.opacity = '0';
+    chatActionsModal.style.transform = 'scale(0.95)';
+    currentChatForActions = null;
+  }
+
+  async function loadProjectsForSelect() {
+    try {
+      const res = await fetch('/api/projects', { cache: 'no-store' });
+      const data = await res.json();
+      const projectsData = data.projects || [];
+      
+      projectSelectEl.innerHTML = '<option value="">Select project...</option>';
+      projectsData.forEach(project => {
+        const option = document.createElement('option');
+        option.value = project.id;
+        option.textContent = project.name;
+        projectSelectEl.appendChild(option);
+      });
+    } catch (e) {
+      console.error('Failed to load projects for select:', e);
+    }
+  }
+
+  async function addChatToProject() {
+    const projectId = parseInt(projectSelectEl.value);
+    if (!projectId || !currentChatForActions) return;
+
+    try {
+      const res = await fetch(`/api/chats/${currentChatForActions}/project`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId })
+      });
+
+      if (res.ok) {
+        hideChatActionsModal();
+        loadChats();
+        loadProjects(); // Update project chat counts
+        showToast('Chat added to project');
+      } else {
+        showToast('Failed to add chat to project');
+      }
+    } catch (e) {
+      showToast('Failed to add chat to project');
+    }
+  }
+
+  async function deleteChatFromActions() {
+    if (!currentChatForActions) return;
+    
+    const confirmed = confirm('Delete this chat? This action cannot be undone.');
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/chats/${currentChatForActions}`, { method: 'DELETE' });
+      if (res.ok) {
+        hideChatActionsModal();
+        if (currentChatId === currentChatForActions) {
+          startNewChat();
+        }
+        loadChats();
+        loadProjects();
+        showToast('Chat deleted successfully');
+      } else {
+        showToast('Failed to delete chat');
+      }
+    } catch (e) {
+      showToast('Failed to delete chat');
+    }
+  }
+
+  composerEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    // Prevent duplicate submissions
+    if (isSubmitting) {
+      return;
+    }
+    
+    const message = inputEl.value.trim();
+    if (!message) {
+      return;
+    }
+    
+    // Check for blacklisted words
+    const detected = checkBlacklist(message);
+    if (detected.length > 0) {
+      showBlacklistModal(detected);
+      
+      // Set up the modal event handlers for this specific submission
+      const handleProceed = () => {
+        hideBlacklistModal();
+        blacklistProceed.removeEventListener('click', handleProceed);
+        blacklistCancel.removeEventListener('click', handleCancel);
+        // Proceed with submission
+        submitMessage(message);
+      };
+      
+      const handleCancel = () => {
+        hideBlacklistModal();
+        blacklistProceed.removeEventListener('click', handleProceed);
+        blacklistCancel.removeEventListener('click', handleCancel);
+        // Restore the message to the input
+        inputEl.value = message;
+      };
+      
+      blacklistProceed.addEventListener('click', handleProceed);
+      blacklistCancel.addEventListener('click', handleCancel);
+      return;
+    }
+    
+    // No blacklisted words, proceed normally
+    submitMessage(message);
+  });
+
+  async function submitMessage(message) {
+    isSubmitting = true; // Set flag to prevent duplicates
+    inputEl.value = '';
+    const provider = providerEl.value;
+    const model = modelEl.value;
+    
+    appendMessage('user', message, provider, model);
+    // Note: Don't add to history yet - the backend will handle adding both user and assistant messages
+
+    const title = chatTitleEl.value.trim();
+    
+    // Create assistant message placeholder with unique IDs
+    const messageId = Date.now(); // Use timestamp as unique ID
+    
+    const assistantWrapper = document.createElement('div');
+    assistantWrapper.className = 'flex items-start gap-3';
+    const badge = `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>`;
+    assistantWrapper.innerHTML = `
+      <div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>
+      <div class="max-w-3xl">${badge}<div class="rounded-xl border border-white/10 bg-white/5 p-3">
+        <span id="loading-indicator-${messageId}" class="text-white/60">Thinking...</span>
+        <span id="response-content-${messageId}" style="display: none;"></span>
+      </div></div>
+    `;
+    messagesEl.appendChild(assistantWrapper);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    
+    const loadingIndicator = document.getElementById(`loading-indicator-${messageId}`);
+    const responseContent = document.getElementById(`response-content-${messageId}`);
+    
+    try {
+      
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, params: currentParams })
+      });
+
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      
+      const data = await response.json();
+      
+      // Handle the response
+      if (data.chat_id) currentChatId = data.chat_id;
+      if (data.title && !title) chatTitleEl.value = data.title;
+      
+      // Hide loading indicator and show response
+      if (loadingIndicator) loadingIndicator.style.display = 'none';
+      if (responseContent) responseContent.style.display = 'inline';
+      
+      if (data.error) {
+        console.log('[FRONTEND] Received error:', data.error);
+        // Handle errors
+        if (responseContent) {
+          responseContent.textContent = data.error || 'Provider error';
+          responseContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
+        }
+        
+        if (data.missing_key_for) {
+          // Open settings and focus the appropriate input
+          const settingsBtn = document.getElementById('settings-btn');
+          const openModal = () => settingsBtn?.click();
+          openModal();
+          setTimeout(() => {
+            try {
+              const el = data.missing_key_for === 'openai' ? document.getElementById('key-openai') : document.getElementById('key-gemini');
+              el?.focus();
+            } catch (_) {}
+          }, 50);
+        }
+        isSubmitting = false; // Reset flag on error
+        return;
+      }
+      
+      if (data.warning) {
+        // Handle warnings
+        showToast(data.warning);
+      }
+      
+      if (data.reply) {
+        // Display the response
+        if (responseContent) {
+          responseContent.textContent = data.reply;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        
+        // Add both user and assistant messages to history
+        history.push({ role: 'user', content: message });
+        history.push({ role: 'assistant', content: data.reply });
+        loadChats();
+      }
+      
+      isSubmitting = false; // Reset flag on completion
+      
+    } catch (err) {
+      console.error('[FRONTEND] Request error:', err);
+      if (loadingIndicator) loadingIndicator.style.display = 'none';
+      if (responseContent) {
+        responseContent.style.display = 'inline';
+        responseContent.textContent = 'Error contacting server.';
+        responseContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
+      }
+      showToast('Provider call failed or API key missing. Open settings to configure.');
+      isSubmitting = false; // Reset flag on error
+    }
+  }
+
+  inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      composerEl.requestSubmit();
+    }
+  });
+
+  newChatEl.addEventListener('click', () => {
+    startNewChat();
+  });
+
+  deleteChatEl.addEventListener('click', async () => {
+    // If no persisted chat yet, just soft clear the UI
+    if (!currentChatId) {
+      startNewChat();
+      return;
+    }
+    const deletingId = currentChatId;
+    try {
+      const res = await fetch(`/api/chats/${deletingId}`, { method: 'DELETE' });
+      if (res.ok) {
+        // Reset currentChatId immediately to avoid race conditions with stale value
+        currentChatId = null;
+        // Refetch remaining chats with no-store to prevent caching
+        try {
+          const listRes = await fetch('/api/chats', { cache: 'no-store' });
+          if (listRes.ok) {
+            const payload = await listRes.json();
+            const chats = payload.chats || [];
+            if (chats.length > 0) {
+              await openChat(chats[0].id);
+            } else {
+              startNewChat();
+            }
+          } else {
+            startNewChat();
+          }
+        } catch (_) {
+          startNewChat();
+        }
+        loadChats();
+        showToast('Chat deleted');
+      } else {
+        showToast('Delete failed');
+      }
+    } catch (e) {
+      showToast('Delete error');
+    }
+  });
+
+  chatTitleEl.addEventListener('change', async () => {
+    const title = chatTitleEl.value.trim();
+    if (!currentChatId || !title) return;
+    await fetch(`/api/chats/${currentChatId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title })
+    });
+    loadChats();
+  });
+
+  clearHistoryEl?.addEventListener('click', async () => {
+    try {
+      // First, get the count of chats and messages
+      const countRes = await fetch('/api/chats/count');
+      if (!countRes.ok) {
+        showToast('Failed to get history count');
+        return;
+      }
+      
+      const counts = await countRes.json();
+      const totalItems = counts.chats + counts.messages;
+      
+      if (totalItems === 0) {
+        showToast('No history to clear');
+        return;
+      }
+      
+      // Show confirmation dialog with detailed count
+      const message = `Are you sure you want to delete ALL chat history?\n\nThis will permanently delete:\n• ${counts.chats} chat${counts.chats !== 1 ? 's' : ''}\n• ${counts.messages} message${counts.messages !== 1 ? 's' : ''}\n\nThis action cannot be undone.`;
+      
+      if (!confirm(message)) {
+        return;
+      }
+      
+      // User confirmed, proceed with deletion
+      const deleteRes = await fetch('/api/chats', { method: 'DELETE' });
+      if (deleteRes.ok) {
+        const result = await deleteRes.json();
+        const deleted = result.deleted;
+        showToast(`Deleted ${deleted.chats} chats and ${deleted.messages} messages`);
+        
+        // Reset UI to new chat state
+        currentChatId = null;
+        currentProjectId = null;
+        startNewChat();
+        loadProjects();
+        loadChats();
+      } else {
+        showToast('Failed to clear history');
+      }
+    } catch (e) {
+      showToast('Error clearing history');
+      console.error('Clear history error:', e);
+    }
+  });
+
+  // Add event listeners for new sidebar buttons
+  newChatSidebarEl.addEventListener('click', () => {
+    startNewChat();
+  });
+
+  // Project modal event listeners
+  newProjectBtn.addEventListener('click', () => {
+    showProjectModal();
+  });
+
+  projectCancelBtn.addEventListener('click', () => {
+    hideProjectModal();
+  });
+
+  projectCreateBtn.addEventListener('click', () => {
+    createProject();
+  });
+
+  projectOverlay.addEventListener('click', (e) => {
+    if (e.target === projectOverlay) hideProjectModal();
+  });
+
+  projectNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      createProject();
+    } else if (e.key === 'Escape') {
+      hideProjectModal();
+    }
+  });
+
+  // Chat actions modal event listeners
+  deleteChatActionBtn.addEventListener('click', () => {
+    deleteChatFromActions();
+  });
+
+  projectSelectEl.addEventListener('change', () => {
+    if (projectSelectEl.value) {
+      addChatToProject();
+    }
+  });
+
+  createNewProjectForChatBtn.addEventListener('click', () => {
+    hideChatActionsModal();
+    showProjectModal();
+  });
+
+  chatActionsCancelBtn.addEventListener('click', () => {
+    hideChatActionsModal();
+  });
+
+  chatActionsOverlay.addEventListener('click', (e) => {
+    if (e.target === chatActionsOverlay) hideChatActionsModal();
+  });
+
+  // Delete project modal event listeners
+  deleteProjectCancelBtn.addEventListener('click', () => {
+    hideDeleteProjectModal();
+  });
+
+  deleteProjectConfirmBtn.addEventListener('click', () => {
+    confirmDeleteProject();
+  });
+
+  deleteProjectOverlay.addEventListener('click', (e) => {
+    if (e.target === deleteProjectOverlay) hideDeleteProjectModal();
+  });
+
+  // Global escape key handler for modals
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      // Close modals in priority order (most recently opened first)
+      if (deleteProjectOverlay.style.pointerEvents === 'auto') {
+        hideDeleteProjectModal();
+      } else if (chatActionsOverlay.style.pointerEvents === 'auto') {
+        hideChatActionsModal();
+      } else if (projectOverlay.style.pointerEvents === 'auto') {
+        hideProjectModal();
+      }
+    }
+  });
+
+  // Make functions globally accessible for onclick handlers
+  window.selectProject = selectProject;
+  window.showProjectMenu = showProjectMenu;
+  window.showChatActions = showChatActions;
+
+  loadProviders();
+  loadProjects();
+  loadChats();
+  loadBlacklist(); // Ensure blacklist is loaded
+</script>

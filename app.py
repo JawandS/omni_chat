@@ -6,7 +6,6 @@ import os
 from datetime import datetime, UTC
 from typing import Optional
 
-from dotenv import load_dotenv, set_key, unset_key, dotenv_values
 from flask import Flask, render_template, request, jsonify
 
 from database import (
@@ -31,33 +30,12 @@ from database import (
     list_chats_by_project,
 )
 from chat import generate_reply, is_ollama_available, start_ollama_server, get_ollama_models
-
-
-def _validate_chat_request(data: dict) -> tuple[str, str, str]:
-    """Validate and extract required chat parameters.
-
-    Args:
-        data: Request JSON data.
-
-    Returns:
-        Tuple of (message, provider, model).
-
-    Raises:
-        ValueError: If required parameters are missing or invalid.
-    """
-    message = (data.get("message") or "").strip()
-    if not message:
-        raise ValueError("message is required")
-
-    provider = (data.get("provider") or "").strip()
-    if not provider:
-        raise ValueError("provider is required")
-
-    model = (data.get("model") or "").strip()
-    if not model:
-        raise ValueError("model is required")
-
-    return message, provider, model
+from utils import (
+    validate_chat_request,
+    generate_chat_title,
+    EnvironmentManager,
+    ProvidersConfigManager,
+)
 
 
 def _create_or_update_chat(
@@ -108,6 +86,15 @@ def create_app() -> Flask:
 
     # Default path to .env can be overridden in tests via app.config['ENV_PATH']
     app.config.setdefault("ENV_PATH", os.path.join(app.root_path, ".env"))
+    
+    # Initialize utility managers
+    env_manager = EnvironmentManager(app.config["ENV_PATH"])
+    
+    # Allow tests (or other environments) to override the providers.json path
+    providers_json_path = os.environ.get(
+        "PROVIDERS_JSON_PATH", os.path.join(app.root_path, "static", "providers.json")
+    )
+    providers_manager = ProvidersConfigManager(providers_json_path)
 
     @app.route("/")
     def home():
@@ -132,7 +119,7 @@ def create_app() -> Flask:
         """
         try:
             data = request.get_json(silent=True) or {}
-            message, provider, model = _validate_chat_request(data)
+            message, provider, model = validate_chat_request(data)
 
             chat_id = data.get("chat_id")
             title = (data.get("title") or "").strip()
@@ -140,9 +127,7 @@ def create_app() -> Flask:
 
             # Generate default title if needed
             if not chat_id and not title:
-                title = (
-                    (message[:48] + "…") if len(message) > 49 else message or "New chat"
-                )
+                title = generate_chat_title(message)
 
             # Create or update chat
             chat_id = _create_or_update_chat(chat_id, title, provider, model, now)
@@ -337,18 +322,6 @@ def create_app() -> Flask:
 
     # Settings: API keys -----------------------------------------------------
 
-    def _get_env_path() -> str:
-        """Get the path to the .env file for environment variable storage.
-
-        Returns:
-            Path to the .env file.
-        """
-        return app.config.get("ENV_PATH", os.path.join(app.root_path, ".env"))
-
-    def _load_env_into_process() -> None:
-        """Ensure process environment reflects file updates."""
-        load_dotenv(_get_env_path(), override=True)
-
     @app.get("/api/keys")
     def api_get_keys():
         """Get current API keys for all providers.
@@ -356,21 +329,7 @@ def create_app() -> Flask:
         Returns:
             JSON response with current API key values (or empty strings if not set).
         """
-        # Prefer file values; fall back to current process env
-        values = dotenv_values(_get_env_path())
-        openai_key = values.get("OPENAI_API_KEY") if values else None
-        gemini_key = values.get("GEMINI_API_KEY") if values else None
-
-        # If not in file, try process env
-        openai_key = openai_key or os.getenv("OPENAI_API_KEY", "")
-        gemini_key = gemini_key or os.getenv("GEMINI_API_KEY", "")
-
-        return jsonify(
-            {
-                "openai": openai_key,
-                "gemini": gemini_key,
-            }
-        )
+        return jsonify(env_manager.get_api_keys())
 
     @app.put("/api/keys")
     def api_put_keys():
@@ -386,30 +345,7 @@ def create_app() -> Flask:
             JSON response with update status and the keys that were updated.
         """
         data = request.get_json(silent=True) or {}
-        env_file = _get_env_path()
-        os.makedirs(os.path.dirname(env_file), exist_ok=True)
-
-        updated: dict[str, Optional[str]] = {}
-        key_mapping = [("OPENAI_API_KEY", "openai"), ("GEMINI_API_KEY", "gemini")]
-
-        for env_key, body_key in key_mapping:
-            if body_key in data:
-                value = data.get(body_key)
-                if value is None or str(value).strip() == "":
-                    # Remove the key
-                    try:
-                        unset_key(env_file, env_key)
-                    except Exception:
-                        pass
-                    os.environ.pop(env_key, None)
-                    updated[body_key] = None
-                else:
-                    # Set the key
-                    set_key(env_file, env_key, str(value), quote_mode="never")
-                    os.environ[env_key] = str(value)
-                    updated[body_key] = str(value)
-
-        _load_env_into_process()
+        updated = env_manager.update_api_keys(data)
         return jsonify({"ok": True, "updated": updated})
 
     @app.delete("/api/keys/<provider>")
@@ -422,68 +358,16 @@ def create_app() -> Flask:
         Returns:
             JSON response with success status or error if provider is unknown.
         """
-        key_mapping = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
-        env_key = key_mapping.get(provider.lower())
-
-        if not env_key:
+        success = env_manager.delete_api_key(provider)
+        if not success:
             return jsonify({"error": "unknown provider"}), 400
-
-        env_file = _get_env_path()
-        try:
-            unset_key(env_file, env_key)
-        except Exception:
-            pass
-
-        os.environ.pop(env_key, None)
-        _load_env_into_process()
         return jsonify({"ok": True})
 
     # Provider/model favorites & defaults ------------------------------------
 
-    # Allow tests (or other environments) to override the providers.json path
-    # via environment variable (must be decided before the helper closures capture it)
-    PROVIDERS_JSON_PATH = os.environ.get(
-        "PROVIDERS_JSON_PATH", os.path.join(app.root_path, "static", "providers.json")
-    )
-
-    def _load_providers_json() -> dict:
-        try:
-            with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            # If providers.json doesn't exist, try to copy from providers_template.json
-            template_path = os.path.join(os.path.dirname(PROVIDERS_JSON_PATH), "providers_template.json")
-            try:
-                with open(template_path, "r", encoding="utf-8") as f:
-                    template_data = json.load(f)
-                # Copy template to providers.json
-                _write_providers_json(template_data)
-                return template_data
-            except FileNotFoundError:
-                raise FileNotFoundError(f"Required template file not found: {template_path}. Cannot initialize providers configuration.")
-            except Exception as e:
-                raise Exception(f"Error loading template file {template_path}: {e}")
-        except Exception as e:
-            raise Exception(f"Error loading providers.json: {e}")
-                
-
-    def _write_providers_json(data: dict) -> None:
-        os.makedirs(os.path.dirname(PROVIDERS_JSON_PATH), exist_ok=True)
-        tmp_path = PROVIDERS_JSON_PATH + ".tmp"
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        os.replace(tmp_path, PROVIDERS_JSON_PATH)
-
-    def _validate_provider_model(provider: str, model: str) -> bool:
-        data = _load_providers_json()
-        for p in data.get("providers", []):
-            if p.get("id") == provider and model in (p.get("models") or []):
-                return True
-        return False
-
     @app.get("/api/favorites")
     def api_get_favorites():
-        data = _load_providers_json()
+        data = providers_manager.load_providers_json()
         return jsonify({
             "favorites": data.get("favorites", []),
             "default": data.get("default", {})
@@ -496,14 +380,14 @@ def create_app() -> Flask:
         model = (body.get("model") or "").strip()
         if not provider or not model:
             return jsonify({"error": "provider and model required"}), 400
-        if not _validate_provider_model(provider, model):
+        if not providers_manager.validate_provider_model(provider, model):
             return jsonify({"error": "unknown provider/model"}), 400
-        data = _load_providers_json()
+        data = providers_manager.load_providers_json()
         favs = data.setdefault("favorites", [])
         key = f"{provider}:{model}"
         if key not in favs:
             favs.append(key)
-        _write_providers_json(data)
+        providers_manager.write_providers_json(data)
         return jsonify({"ok": True, "favorites": favs})
 
     @app.delete("/api/favorites")
@@ -512,19 +396,19 @@ def create_app() -> Flask:
         model = (request.args.get("model") or "").strip()
         if not provider or not model:
             return jsonify({"error": "provider and model required"}), 400
-        data = _load_providers_json()
+        data = providers_manager.load_providers_json()
         key = f"{provider}:{model}"
         favs = data.setdefault("favorites", [])
         if key in favs:
             favs.remove(key)
-        _write_providers_json(data)
+        providers_manager.write_providers_json(data)
         return jsonify({"ok": True, "favorites": favs})
 
     # Blacklist management --------------------------------------------------
     @app.get("/api/blacklist")
     def api_get_blacklist():
         """Get current blacklisted words."""
-        data = _load_providers_json()
+        data = providers_manager.load_providers_json()
         return jsonify({"blacklist": data.get("blacklist", [])})
 
     @app.post("/api/blacklist")
@@ -534,11 +418,11 @@ def create_app() -> Flask:
         word = (body.get("word") or "").strip().lower()
         if not word:
             return jsonify({"error": "word is required"}), 400
-        data = _load_providers_json()
+        data = providers_manager.load_providers_json()
         blacklist = data.setdefault("blacklist", [])
         if word not in blacklist:
             blacklist.append(word)
-        _write_providers_json(data)
+        providers_manager.write_providers_json(data)
         response = jsonify({"ok": True, "blacklist": blacklist})
         response.headers["X-Blacklist-Updated"] = "true"
         return response
@@ -549,11 +433,11 @@ def create_app() -> Flask:
         word = (request.args.get("word") or "").strip().lower()
         if not word:
             return jsonify({"error": "word is required"}), 400
-        data = _load_providers_json()
+        data = providers_manager.load_providers_json()
         blacklist = data.setdefault("blacklist", [])
         if word in blacklist:
             blacklist.remove(word)
-        _write_providers_json(data)
+        providers_manager.write_providers_json(data)
         response = jsonify({"ok": True, "blacklist": blacklist})
         response.headers["X-Blacklist-Updated"] = "true"
         return response
@@ -565,16 +449,16 @@ def create_app() -> Flask:
         model = (body.get("model") or "").strip()
         if not provider or not model:
             return jsonify({"error": "provider and model required"}), 400
-        if not _validate_provider_model(provider, model):
+        if not providers_manager.validate_provider_model(provider, model):
             return jsonify({"error": "unknown provider/model"}), 400
-        data = _load_providers_json()
+        data = providers_manager.load_providers_json()
         data["default"] = {"provider": provider, "model": model}
-        _write_providers_json(data)
+        providers_manager.write_providers_json(data)
         return jsonify({"ok": True, "default": data["default"]})
 
     @app.get("/api/providers-config")
     def api_get_providers_config():
-        return jsonify(_load_providers_json())
+        return jsonify(providers_manager.load_providers_json())
 
     # Dynamic model parameter metadata --------------------------------------
     @app.get("/api/model-config")
@@ -782,43 +666,14 @@ def create_app() -> Flask:
 def _initialize_ollama_with_app(app_instance):
     """Initialize Ollama server and update providers.json at startup."""
     try:
-        # We need to access the helper functions that are defined inside create_app
-        # So we'll implement the logic here directly
-        
-        # Allow tests (or other environments) to override the providers.json path
-        PROVIDERS_JSON_PATH = os.environ.get(
+        # Create a providers manager for this context
+        providers_json_path = os.environ.get(
             "PROVIDERS_JSON_PATH", os.path.join(app_instance.root_path, "static", "providers.json")
         )
-
-        def _write_providers_json(data: dict) -> None:
-            os.makedirs(os.path.dirname(PROVIDERS_JSON_PATH), exist_ok=True)
-            tmp_path = PROVIDERS_JSON_PATH + ".tmp"
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            os.replace(tmp_path, PROVIDERS_JSON_PATH)
-
-        def _load_providers_json() -> dict:
-            try:
-                with open(PROVIDERS_JSON_PATH, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except FileNotFoundError:
-                # If providers.json doesn't exist, try to copy from providers_template.json
-                template_path = os.path.join(os.path.dirname(PROVIDERS_JSON_PATH), "providers_template.json")
-                try:
-                    with open(template_path, "r", encoding="utf-8") as f:
-                        template_data = json.load(f)
-                    # Copy template to providers.json
-                    _write_providers_json(template_data)
-                    return template_data
-                except FileNotFoundError:
-                    raise FileNotFoundError(f"Required template file not found: {template_path}. Cannot initialize providers configuration.")
-                except Exception as e:
-                    raise Exception(f"Error loading template file {template_path}: {e}")
-            except Exception as e:
-                raise Exception(f"Error loading providers.json: {e}")
+        providers_mgr = ProvidersConfigManager(providers_json_path)
 
         # Load current providers data
-        data = _load_providers_json()
+        data = providers_mgr.load_providers_json()
         providers = data.get("providers", [])
         
         # Remove existing Ollama provider if present
@@ -843,7 +698,7 @@ def _initialize_ollama_with_app(app_instance):
         
         # Update providers data and save
         data["providers"] = providers
-        _write_providers_json(data)
+        providers_mgr.write_providers_json(data)
             
     except Exception as e:
         # Only log errors during Ollama initialization

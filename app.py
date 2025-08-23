@@ -4,10 +4,10 @@ import json
 import logging
 import os
 from datetime import datetime, UTC
-from typing import Optional, Generator
+from typing import Optional
 
 from dotenv import load_dotenv, set_key, unset_key, dotenv_values
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify
 
 from database import (
     init_app as db_init_app,
@@ -30,7 +30,7 @@ from database import (
     remove_chat_from_project,
     list_chats_by_project,
 )
-from chat import generate_reply, generate_reply_stream, is_ollama_available, start_ollama_server, get_ollama_models
+from chat import generate_reply, is_ollama_available, start_ollama_server, get_ollama_models
 
 
 def _validate_chat_request(data: dict) -> tuple[str, str, str]:
@@ -116,7 +116,7 @@ def create_app() -> Flask:
 
     @app.post("/api/chat")
     def api_chat():
-        """Non-streaming chat endpoint that stores messages and generates a reply.
+        """Chat endpoint that stores messages and generates a reply.
 
         Expected JSON body:
             {
@@ -155,7 +155,20 @@ def create_app() -> Flask:
             # Generate and save assistant reply
             history = data.get("history") or []
             params = data.get("params") or {}
+            
+            logger.info(f"[API] Calling generate_reply for {provider}/{model}")
+            logger.info(f"[API] Message length: {len(message)} chars")
+            logger.info(f"[API] History length: {len(history)} messages")
+            logger.info(f"[API] Params: {params}")
+            
             reply_obj = generate_reply(provider, model, message, history, params=params)
+            
+            logger.info(f"[API] Reply received - length: {len(reply_obj.reply)} chars")
+            if reply_obj.error:
+                logger.warning(f"[API] Reply contains error: {reply_obj.error}")
+            if reply_obj.warning:
+                logger.info(f"[API] Reply contains warning: {reply_obj.warning}")
+                
             insert_message(
                 chat_id,
                 "assistant",
@@ -184,117 +197,6 @@ def create_app() -> Flask:
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         except Exception:  # pragma: no cover
-            return jsonify({"error": "unexpected error"}), 500
-
-    @app.post("/api/chat/stream")
-    def api_chat_stream():
-        """Streaming chat endpoint that streams tokens as they're generated.
-
-        Expected JSON body:
-            {
-                "message": str,
-                "chat_id": int (optional),
-                "provider": str,
-                "model": str,
-                "title": str (optional)
-            }
-
-        Returns:
-            Server-sent events stream with chat responses.
-        """
-        try:
-            data = request.get_json(silent=True) or {}
-            message, provider, model = _validate_chat_request(data)
-
-            chat_id = data.get("chat_id")
-            title = (data.get("title") or "").strip()
-            # Capture initial timestamp when request received
-            request_ts = datetime.now(UTC).isoformat()
-
-            # Generate default title if needed
-            if not chat_id and not title:
-                title = (
-                    (message[:48] + "…") if len(message) > 49 else message or "New chat"
-                )
-
-            # Create or update chat and commit immediately for streaming
-            chat_id = _create_or_update_chat(chat_id, title, provider, model, request_ts)
-            commit()
-
-            # Save user message with its own timestamp and immediately bump chat updated_at
-            user_msg_ts = datetime.now(UTC).isoformat()
-            insert_message(
-                chat_id, "user", message, user_msg_ts, provider=provider, model=model
-            )
-            # Touch chat so it appears/updates in history sidebar right after the user sends a message
-            touch_chat(chat_id, user_msg_ts)
-            commit()
-
-            def generate() -> Generator[str, None, None]:
-                """Generator function for streaming response."""
-                try:
-                    # Get history for context
-                    history = data.get("history") or []
-
-                    # Send initial metadata
-                    yield f"data: {json.dumps({'type': 'metadata', 'chat_id': chat_id, 'title': title or None})}\n\n"
-
-                    full_reply = ""
-
-                    # Generate streaming reply
-                    params = data.get("params") or {}
-                    for chunk in generate_reply_stream(
-                        provider, model, message, history, params=params
-                    ):
-                        if chunk.token:
-                            full_reply += chunk.token
-                            yield f"data: {json.dumps({'type': 'token', 'token': chunk.token})}\n\n"
-                        elif chunk.error:
-                            yield f"data: {json.dumps({'type': 'error', 'error': chunk.error, 'missing_key_for': chunk.missing_key_for})}\n\n"
-                            return
-                        elif chunk.warning:
-                            yield f"data: {json.dumps({'type': 'warning', 'warning': chunk.warning})}\n\n"
-
-                    # Save the complete reply to database in a new app context
-                    if full_reply:
-                        with app.app_context():
-                            try:
-                                # Use a fresh timestamp when assistant reply fully ready
-                                assistant_ts = datetime.now(UTC).isoformat()
-                                insert_message(
-                                    chat_id,
-                                    "assistant",
-                                    full_reply,
-                                    assistant_ts,
-                                    provider=provider,
-                                    model=model,
-                                )
-                                touch_chat(chat_id, assistant_ts)
-                                commit()
-                            except Exception as e:
-                                logger.error(f"[STREAMING] Error saving reply: {e}")
-
-                    # Send completion signal
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
-
-                except Exception as e:
-                    logger.error(f"[STREAMING] Error in generator: {str(e)}")
-                    yield f"data: {json.dumps({'type': 'error', 'error': f'Stream error: {str(e)}'})}\n\n"
-
-            return Response(
-                generate(),
-                mimetype="text/event-stream",
-                headers={
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "Access-Control-Allow-Origin": "*",
-                },
-            )
-
-        except ValueError as e:
-            return jsonify({"error": str(e)}), 400
-        except Exception as e:  # pragma: no cover
-            logger.error(f"[STREAMING] Error in endpoint: {str(e)}")
             return jsonify({"error": "unexpected error"}), 500
 
     @app.get("/api/chats")

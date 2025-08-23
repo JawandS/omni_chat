@@ -1072,11 +1072,10 @@ Omni Chat
     
     appendMessage('user', message, provider, model);
     // Note: Don't add to history yet - the backend will handle adding both user and assistant messages
-    // We'll add the user message to local history after successful submission, and assistant after streaming completes
 
     const title = chatTitleEl.value.trim();
     
-    // Create assistant message placeholder for streaming with unique IDs
+    // Create assistant message placeholder with unique IDs
     const messageId = Date.now(); // Use timestamp as unique ID
     
     const assistantWrapper = document.createElement('div');
@@ -1086,21 +1085,18 @@ Omni Chat
       <div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>
       <div class="max-w-3xl">${badge}<div class="rounded-xl border border-white/10 bg-white/5 p-3">
         <span id="loading-indicator-${messageId}" class="text-white/60">Thinking...</span>
-        <span id="streaming-content-${messageId}" style="display: none;"></span>
-        <span id="typing-indicator-${messageId}" style="display: none;">▋</span>
+        <span id="response-content-${messageId}" style="display: none;"></span>
       </div></div>
     `;
     messagesEl.appendChild(assistantWrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
     
     const loadingIndicator = document.getElementById(`loading-indicator-${messageId}`);
-    const streamingContent = document.getElementById(`streaming-content-${messageId}`);
-    const typingIndicator = document.getElementById(`typing-indicator-${messageId}`);
-    let fullReply = '';
+    const responseContent = document.getElementById(`response-content-${messageId}`);
     
     try {
       
-      const response = await fetch('/api/chat/stream', {
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, params: currentParams })
@@ -1110,97 +1106,67 @@ Omni Chat
         throw new Error('Network response was not ok');
       }
       
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let streamingStarted = false;
+      const data = await response.json();
       
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\\n');
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.type === 'metadata') {
-                // Handle metadata (chat_id, title, etc.)
-                if (data.chat_id) currentChatId = data.chat_id;
-                if (data.title && !title) chatTitleEl.value = data.title;
-                // Ensure sidebar history reflects newly created chat immediately
-                // (previously only refreshed after full streaming completion)
-                loadChats();
-              } else if (data.type === 'token') {
-                // Start streaming: hide loading, show streaming content and typing indicator
-                if (!streamingStarted) {
-                  streamingStarted = true;
-                  if (loadingIndicator) loadingIndicator.style.display = 'none';
-                  if (streamingContent) streamingContent.style.display = 'inline';
-                  if (typingIndicator) typingIndicator.style.display = 'inline';
-                }
-                
-                // Append token to the streaming content
-                fullReply += data.token;
-                if (streamingContent) {
-                  streamingContent.textContent = fullReply;
-                  messagesEl.scrollTop = messagesEl.scrollHeight;
-                }
-              } else if (data.type === 'error') {
-                console.log('[FRONTEND] Received error:', data.error);
-                // Handle errors
-                if (loadingIndicator) loadingIndicator.style.display = 'none';
-                if (typingIndicator) typingIndicator.style.display = 'none';
-                if (streamingContent) {
-                  streamingContent.style.display = 'inline';
-                  streamingContent.textContent = data.error || 'Provider error';
-                  streamingContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
-                }
-                
-                if (data.missing_key_for) {
-                  // Open settings and focus the appropriate input
-                  const settingsBtn = document.getElementById('settings-btn');
-                  const openModal = () => settingsBtn?.click();
-                  openModal();
-                  setTimeout(() => {
-                    try {
-                      const el = data.missing_key_for === 'openai' ? document.getElementById('key-openai') : document.getElementById('key-gemini');
-                      el?.focus();
-                    } catch (_) {}
-                  }, 50);
-                }
-                isSubmitting = false; // Reset flag on error
-                return;
-              } else if (data.type === 'warning') {
-                // Handle warnings
-                showToast(data.warning);
-              } else if (data.type === 'done') {
-                // Streaming complete
-                if (typingIndicator) typingIndicator.style.display = 'none';
-                // Now add both user and assistant messages to history
-                history.push({ role: 'user', content: message });
-                history.push({ role: 'assistant', content: fullReply });
-                loadChats();
-                isSubmitting = false; // Reset flag on completion
-                return;
-              }
-            } catch (parseError) {
-              console.error('[FRONTEND] Error parsing streaming data:', parseError);
-            }
-          }
+      // Handle the response
+      if (data.chat_id) currentChatId = data.chat_id;
+      if (data.title && !title) chatTitleEl.value = data.title;
+      
+      // Hide loading indicator and show response
+      if (loadingIndicator) loadingIndicator.style.display = 'none';
+      if (responseContent) responseContent.style.display = 'inline';
+      
+      if (data.error) {
+        console.log('[FRONTEND] Received error:', data.error);
+        // Handle errors
+        if (responseContent) {
+          responseContent.textContent = data.error || 'Provider error';
+          responseContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
         }
+        
+        if (data.missing_key_for) {
+          // Open settings and focus the appropriate input
+          const settingsBtn = document.getElementById('settings-btn');
+          const openModal = () => settingsBtn?.click();
+          openModal();
+          setTimeout(() => {
+            try {
+              const el = data.missing_key_for === 'openai' ? document.getElementById('key-openai') : document.getElementById('key-gemini');
+              el?.focus();
+            } catch (_) {}
+          }, 50);
+        }
+        isSubmitting = false; // Reset flag on error
+        return;
       }
       
+      if (data.warning) {
+        // Handle warnings
+        showToast(data.warning);
+      }
+      
+      if (data.reply) {
+        // Display the response
+        if (responseContent) {
+          responseContent.textContent = data.reply;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        
+        // Add both user and assistant messages to history
+        history.push({ role: 'user', content: message });
+        history.push({ role: 'assistant', content: data.reply });
+        loadChats();
+      }
+      
+      isSubmitting = false; // Reset flag on completion
+      
     } catch (err) {
-      console.error('[FRONTEND] Streaming error:', err);
+      console.error('[FRONTEND] Request error:', err);
       if (loadingIndicator) loadingIndicator.style.display = 'none';
-      if (typingIndicator) typingIndicator.style.display = 'none';
-      if (streamingContent) {
-        streamingContent.style.display = 'inline';
-        streamingContent.textContent = 'Error contacting server.';
-        streamingContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
+      if (responseContent) {
+        responseContent.style.display = 'inline';
+        responseContent.textContent = 'Error contacting server.';
+        responseContent.parentNode.className = 'rounded-xl border border-red-400/60 bg-red-500/10 p-3';
       }
       showToast('Provider call failed or API key missing. Open settings to configure.');
       isSubmitting = false; // Reset flag on error

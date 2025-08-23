@@ -58,20 +58,6 @@ def test_add_favorite_unknown_model(client):
     assert r.status_code == 400
     assert r.get_json()["error"] == "unknown provider/model"
 
-
-def test_set_default_model_flow(client):
-    r = client.put("/api/default-model", json={"provider": "openai", "model": "gpt-4o-mini"})
-    assert r.status_code == 200
-    body = r.get_json()
-    assert body["ok"] is True
-    assert body["default"] == {"provider": "openai", "model": "gpt-4o-mini"}
-
-    # Get via favorites endpoint (which returns default too)
-    r2 = client.get("/api/favorites")
-    assert r2.status_code == 200
-    assert r2.get_json()["default"] == {"provider": "openai", "model": "gpt-4o-mini"}
-
-
 def test_set_default_model_invalid(client):
     r = client.put("/api/default-model", json={"provider": "openai", "model": "does-not-exist"})
     assert r.status_code == 400

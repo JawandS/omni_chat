@@ -4,7 +4,7 @@ import os
 import subprocess
 import time
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Iterator, Any, cast
+from typing import List, Dict, Optional, Any, cast
 
 try:
     from dotenv import load_dotenv  # type: ignore
@@ -51,23 +51,6 @@ class ChatReply:
     missing_key_for: Optional[str] = None
 
 
-@dataclass
-class StreamChunk:
-    """A chunk of streamed response.
-
-    Attributes:
-        token: Optional text token from the stream.
-        warning: Optional warning message.
-        error: Optional error message.
-        missing_key_for: Optional provider name if API key is missing.
-    """
-
-    token: Optional[str] = None
-    warning: Optional[str] = None
-    error: Optional[str] = None
-    missing_key_for: Optional[str] = None
-
-
 def _get_api_key(provider: str) -> str:
     """Get API key for the specified provider.
 
@@ -107,13 +90,26 @@ def is_ollama_server_running() -> bool:
     Returns:
         True if server is running, False otherwise.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if requests is None:
+        logger.warning("[OLLAMA] requests library not available for server check")
         return False
         
     try:
+        logger.info("[OLLAMA] Checking if server is running at http://localhost:11434/api/tags")
         response = requests.get("http://localhost:11434/api/tags", timeout=15)
-        return response.status_code == 200
-    except requests.RequestException:
+        
+        if response.status_code == 200:
+            logger.info("[OLLAMA] Server is running and responding")
+            return True
+        else:
+            logger.warning(f"[OLLAMA] Server responded with status {response.status_code}")
+            return False
+            
+    except requests.RequestException as e:
+        logger.warning(f"[OLLAMA] Server check failed: {type(e).__name__}: {e}")
         return False
 
 
@@ -266,80 +262,6 @@ def _openai_call(
         return content or None
 
 
-def _openai_call_stream(
-    model: str,
-    history: List[Dict[str, str]],
-    message: str,
-    params: Optional[Dict[str, Any]] = None,
-) -> Iterator[str]:
-    """Call OpenAI API with streaming.
-
-    Args:
-        model: The OpenAI model name.
-        history: Previous message history.
-        message: The current user message.
-
-    Yields:
-        Content tokens as they arrive.
-    """
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    key = _get_api_key("openai")
-    if not key or key.startswith("PUT_") or OpenAI is None:
-        return
-
-    client = OpenAI(api_key=key)
-    messages = _format_history_for_openai(history, message)
-    params = params or {}
-    allowed = {
-        "temperature",
-        "top_p",
-        "max_tokens",
-        "presence_penalty",
-        "frequency_penalty",
-        "seed",
-        "stop",
-        "response_format",
-        "thinking",
-        "thinking_budget_tokens",
-    }
-    call_args = {k: params[k] for k in allowed if k in params}
-
-    if _is_reasoning_model(model):
-        # Reasoning models don't support streaming currently, fall back to non-streaming
-        logger.info(
-            f"[OPENAI] Using reasoning model {model}, falling back to non-streaming"
-        )
-        content = _openai_call(model, history, message, params=params)
-        if content:
-            logger.info(
-                f"[OPENAI] Got full content from reasoning model: {len(content)} chars"
-            )
-            yield content
-        return
-    else:
-        logger.info(f"[OPENAI] Starting streaming for model {model}")
-        stream = client.chat.completions.create(  # type: ignore[arg-type]
-            model=model,
-            messages=cast(Any, messages),
-            stream=True,
-            **call_args,
-        )
-        token_count = 0
-        for chunk in stream:
-            # Guard for union types or unexpected tuple outputs in newer SDKs
-            if hasattr(chunk, 'choices') and getattr(chunk, 'choices'):
-                first_choice = getattr(chunk, 'choices')[0]
-                delta = getattr(first_choice, 'delta', None)
-                content_piece = getattr(delta, 'content', None) if delta else None
-                if content_piece:
-                    token_count += 1
-                    logger.info(f"[OPENAI] Token {token_count}: '{content_piece}'")
-                    yield content_piece  # type: ignore[return-value]
-
-
 def _format_history_for_gemini(
     history: List[Dict[str, str]], latest_message: str
 ) -> tuple[list[Dict], str]:
@@ -396,9 +318,43 @@ def _gemini_call(
     chat = model_obj.start_chat(history=cast(Any, chat_history))  # type: ignore[arg-type]
     resp = chat.send_message(user_text)
 
+    # Check for safety/content filtering first
+    if hasattr(resp, 'candidates') and resp.candidates:
+        candidate = resp.candidates[0]
+        if hasattr(candidate, 'finish_reason'):
+            finish_reason = candidate.finish_reason
+            # finish_reason values: 1=STOP, 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
+            if finish_reason == 3:  # SAFETY - content was filtered
+                return "I cannot provide a response to that request due to safety filters."
+            elif finish_reason == 4:  # RECITATION - content contained citations
+                return "I cannot provide a response that might contain recitations or copyrighted content."
+            elif finish_reason == 2:  # MAX_TOKENS - response was truncated
+                # Try to get partial content if available
+                pass
+            elif finish_reason not in (1, 2):  # Not STOP or MAX_TOKENS
+                return "I cannot provide a response to that request."
+
     # Get text output (first candidate)
-    if hasattr(resp, "text") and resp.text:
-        return str(resp.text)
+    try:
+        if hasattr(resp, "text") and resp.text:
+            return str(resp.text)
+    except ValueError as e:
+        # Handle the case where response.text fails due to no valid parts
+        if "response.text" in str(e) and "finish_reason" in str(e):
+            # Try to extract finish_reason from candidates
+            if hasattr(resp, 'candidates') and resp.candidates:
+                candidate = resp.candidates[0]
+                if hasattr(candidate, 'finish_reason'):
+                    finish_reason = candidate.finish_reason
+                    if finish_reason == 3:
+                        return "I cannot provide a response to that request due to safety filters."
+                    elif finish_reason == 4:
+                        return "I cannot provide a response that might contain recitations or copyrighted content."
+                    else:
+                        return "I cannot generate a response to that request."
+            return "I cannot generate a response to that request."
+        raise  # Re-raise if it's a different ValueError
+    
     # Fallback: try candidates list
     if getattr(resp, "candidates", None):
         for cand in resp.candidates:
@@ -449,8 +405,21 @@ def _ollama_call(
     Returns:
         The reply string or None on failure.
     """
-    if requests is None or not is_ollama_server_running():
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    if requests is None:
+        logger.error("[OLLAMA] requests library not available")
         return None
+        
+    if not is_ollama_server_running():
+        logger.error("[OLLAMA] Ollama server is not running")
+        return None
+
+    logger.info(f"[OLLAMA] Starting request to model: {model}")
+    logger.info(f"[OLLAMA] Message length: {len(message)} chars")
+    logger.info(f"[OLLAMA] History length: {len(history or [])} messages")
 
     messages = _format_history_for_ollama(history, message)
     params = params or {}
@@ -473,136 +442,49 @@ def _ollama_call(
     }
     if options:
         payload["options"] = options
+        logger.info(f"[OLLAMA] Using options: {options}")
+
+    logger.info(f"[OLLAMA] Sending request to http://localhost:11434/api/chat")
+    logger.info(f"[OLLAMA] Payload model: {payload['model']}")
+    logger.info(f"[OLLAMA] Payload messages count: {len(payload['messages'])}")
 
     try:
+        start_time = time.time()
+        logger.info("[OLLAMA] Making HTTP request...")
+        
         response = requests.post(
             "http://localhost:11434/api/chat",
             json=payload,
             timeout=60
         )
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"[OLLAMA] Request completed in {elapsed_time:.2f}s")
+        logger.info(f"[OLLAMA] Response status: {response.status_code}")
+        
         if response.status_code == 200:
             data = response.json()
-            return data.get("message", {}).get("content", "")
-    except requests.RequestException:
-        pass
+            logger.info(f"[OLLAMA] Response data keys: {list(data.keys())}")
+            
+            message_content = data.get("message", {}).get("content", "")
+            logger.info(f"[OLLAMA] Response length: {len(message_content)} chars")
+            
+            if message_content:
+                logger.info(f"[OLLAMA] Response preview: {message_content[:100]}...")
+                return message_content
+            else:
+                logger.warning("[OLLAMA] Empty response content")
+                return ""
+        else:
+            logger.error(f"[OLLAMA] HTTP error {response.status_code}: {response.text}")
+            
+    except requests.RequestException as e:
+        logger.error(f"[OLLAMA] Request exception: {type(e).__name__}: {e}")
+    except Exception as e:
+        logger.error(f"[OLLAMA] Unexpected error: {type(e).__name__}: {e}")
+        
+    logger.error("[OLLAMA] Request failed, returning None")
     return None
-
-
-def _ollama_call_stream(
-    model: str,
-    history: List[Dict[str, str]],
-    message: str,
-    params: Optional[Dict[str, Any]] = None,
-) -> Iterator[str]:
-    """Call Ollama API with streaming.
-
-    Args:
-        model: The Ollama model name.
-        history: Previous message history.
-        message: The current user message.
-        params: Optional parameters for the model.
-
-    Yields:
-        Content tokens as they arrive.
-    """
-    if requests is None or not is_ollama_server_running():
-        return
-
-    messages = _format_history_for_ollama(history, message)
-    params = params or {}
-    
-    # Map common parameters to Ollama format
-    options = {}
-    if "temperature" in params:
-        options["temperature"] = params["temperature"]
-    if "top_p" in params:
-        options["top_p"] = params["top_p"]
-    if "top_k" in params:
-        options["top_k"] = params["top_k"]
-    if "max_tokens" in params:
-        options["num_predict"] = params["max_tokens"]
-
-    payload = {
-        "model": model,
-        "messages": messages,
-        "stream": True,
-    }
-    if options:
-        payload["options"] = options
-
-    try:
-        response = requests.post(
-            "http://localhost:11434/api/chat",
-            json=payload,
-            stream=True,
-            timeout=60
-        )
-        if response.status_code == 200:
-            for line in response.iter_lines():
-                if line:
-                    try:
-                        data = line.decode('utf-8')
-                        import json
-                        chunk = json.loads(data)
-                        if "message" in chunk and "content" in chunk["message"]:
-                            content = chunk["message"]["content"]
-                            if content:
-                                yield content
-                        if chunk.get("done", False):
-                            break
-                    except json.JSONDecodeError:
-                        continue
-    except requests.RequestException:
-        pass
-
-
-def _gemini_call_stream(
-    model: str,
-    history: List[Dict[str, str]],
-    message: str,
-    params: Optional[Dict[str, Any]] = None,
-) -> Iterator[str]:
-    """Call Google Gemini API with streaming.
-
-    Args:
-        model: The Gemini model name.
-        history: Previous message history.
-        message: The current user message.
-
-    Yields:
-        Content tokens as they arrive.
-    """
-    key = _get_api_key("gemini")
-    if not key or key.startswith("PUT_") or genai is None:
-        return
-
-    genai.configure(api_key=key)
-    chat_history, user_text = _format_history_for_gemini(history, message)
-    params = params or {}
-    allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
-    generation_config = {k: params[k] for k in allowed if k in params}
-    model_obj = genai.GenerativeModel(model, generation_config=generation_config or None)
-    chat = model_obj.start_chat(history=cast(Any, chat_history))  # type: ignore[arg-type]
-
-    # Stream the response
-    try:
-        response = chat.send_message(user_text, stream=True)
-        for chunk in response:
-            if hasattr(chunk, "text") and chunk.text:
-                yield chunk.text
-            elif hasattr(chunk, "candidates") and chunk.candidates:
-                for candidate in chunk.candidates:
-                    if hasattr(candidate, "content") and candidate.content:
-                        if hasattr(candidate.content, "parts"):
-                            for part in candidate.content.parts:
-                                if hasattr(part, "text") and part.text:
-                                    yield part.text
-    except StopIteration:
-        # Normal end of stream, ignore
-        pass
-    except Exception:
-        # Re-raise other exceptions
-        raise
 
 
 def generate_reply(
@@ -669,138 +551,32 @@ def generate_reply(
             )
 
     elif provider_lower == "ollama":
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
+            logger.info(f"[OLLAMA] generate_reply called for model: {model}")
+            
             if not is_ollama_server_running():
+                logger.warning("[OLLAMA] Server not running")
                 return ChatReply(
                     reply="", error="Ollama server not running", missing_key_for="ollama"
                 )
+                
+            logger.info("[OLLAMA] Server is running, calling _ollama_call")
             content = _ollama_call(model, history, message, params=params)
+            
             if content:
+                logger.info(f"[OLLAMA] Successfully got response: {len(content)} chars")
                 return ChatReply(reply=content)
+                
+            logger.warning("[OLLAMA] _ollama_call returned empty content")
             return ChatReply(reply="", error="Ollama returned no content")
+            
         except Exception as e:
+            logger.error(f"[OLLAMA] Exception in generate_reply: {type(e).__name__}: {e}")
             return ChatReply(
                 reply="", error=f"Ollama error: {e.__class__.__name__}: {e}"
             )
     else:
         raise ValueError(f"unknown provider: {provider}")
-
-
-def generate_reply_stream(
-    provider: str,
-    model: str,
-    message: str,
-    history: Optional[List[Dict[str, str]]] = None,
-    params: Optional[Dict[str, Any]] = None,
-) -> Iterator[StreamChunk]:
-    """Generate a streaming chat response using the specified provider.
-
-    Args:
-        provider: AI provider name ('openai', 'gemini', or 'ollama').
-        model: Model name to use.
-        message: The user message.
-        history: Optional previous message history.
-
-    Yields:
-        StreamChunk objects with tokens, errors, or warnings.
-    """
-    import logging
-
-    logger = logging.getLogger(__name__)
-
-    if not provider or not provider.strip():
-        yield StreamChunk(error="provider is required")
-        return
-
-    if not model or not model.strip():
-        yield StreamChunk(error="model is required")
-        return
-
-    provider_lower = provider.lower().strip()
-    history = history or []
-
-    logger.info(f"[STREAM] Starting stream for provider: {provider}, model: {model}")
-
-    if provider_lower == "openai":
-        try:
-            key = _get_api_key("openai")
-            if not key or key.startswith("PUT_") or OpenAI is None:
-                logger.info("[STREAM] OpenAI API key missing")
-                yield StreamChunk(
-                    error="OpenAI API key not set", missing_key_for="openai"
-                )
-                return
-
-            had_content = False
-            token_count = 0
-            for token in _openai_call_stream(model, history, message, params=params):
-                if token:
-                    had_content = True
-                    token_count += 1
-                    logger.info(f"[STREAM] Yielding token {token_count}: '{token}'")
-                    yield StreamChunk(token=token)
-
-            if not had_content:
-                logger.info("[STREAM] No content received from OpenAI")
-                yield StreamChunk(error="OpenAI returned no content")
-
-        except Exception as e:
-            logger.error(f"[STREAM] OpenAI error: {e}")
-            yield StreamChunk(error=f"OpenAI error: {e.__class__.__name__}: {e}")
-
-    elif provider_lower == "gemini":
-        try:
-            key = _get_api_key("gemini")
-            if not key or key.startswith("PUT_") or genai is None:
-                yield StreamChunk(
-                    error="Gemini API key not set", missing_key_for="gemini"
-                )
-                return
-
-            had_content = False
-            token_count = 0
-            for token in _gemini_call_stream(model, history, message, params=params):
-                if token:
-                    had_content = True
-                    token_count += 1
-                    logger.info(
-                        f"[STREAM] Yielding Gemini token {token_count}: '{token}'"
-                    )
-                    yield StreamChunk(token=token)
-
-            if not had_content:
-                yield StreamChunk(error="Gemini returned no content")
-
-        except Exception as e:
-            logger.error(f"[STREAM] Gemini error: {e}")
-            yield StreamChunk(error=f"Gemini error: {e.__class__.__name__}: {e}")
-
-    elif provider_lower == "ollama":
-        try:
-            if not is_ollama_server_running():
-                logger.info("[STREAM] Ollama server not running")
-                yield StreamChunk(
-                    error="Ollama server not running", missing_key_for="ollama"
-                )
-                return
-
-            had_content = False
-            token_count = 0
-            for token in _ollama_call_stream(model, history, message, params=params):
-                if token:
-                    had_content = True
-                    token_count += 1
-                    logger.info(
-                        f"[STREAM] Yielding Ollama token {token_count}: '{token}'"
-                    )
-                    yield StreamChunk(token=token)
-
-            if not had_content:
-                yield StreamChunk(error="Ollama returned no content")
-
-        except Exception as e:
-            logger.error(f"[STREAM] Ollama error: {e}")
-            yield StreamChunk(error=f"Ollama error: {e.__class__.__name__}: {e}")
-
-    else:
-        yield StreamChunk(error=f"unknown provider: {provider}")

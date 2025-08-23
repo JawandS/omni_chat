@@ -644,7 +644,9 @@ def create_app() -> Flask:
         if word not in blacklist:
             blacklist.append(word)
         _write_providers_json(data)
-        return jsonify({"ok": True, "blacklist": blacklist})
+        response = jsonify({"ok": True, "blacklist": blacklist})
+        response.headers["X-Blacklist-Updated"] = "true"
+        return response
 
     @app.delete("/api/blacklist")
     def api_remove_blacklist_word():
@@ -657,7 +659,9 @@ def create_app() -> Flask:
         if word in blacklist:
             blacklist.remove(word)
         _write_providers_json(data)
-        return jsonify({"ok": True, "blacklist": blacklist})
+        response = jsonify({"ok": True, "blacklist": blacklist})
+        response.headers["X-Blacklist-Updated"] = "true"
+        return response
 
     @app.put("/api/default-model")
     def api_set_default_model():

@@ -191,12 +191,64 @@ Omni Chat
       if (res.ok) {
         const data = await res.json();
         blacklistCache = data.blacklist || [];
+        console.log('[FRONTEND] Blacklist cache updated:', blacklistCache);
       }
     } catch (_) {}
   }
 
   // Make loadBlacklist available globally so settings modal can refresh the cache
   window.loadBlacklist = loadBlacklist;
+
+  // Listen for blacklist update events
+  window.addEventListener('blacklistUpdated', (event) => {
+    console.log('[FRONTEND] Received blacklist update event:', event.detail);
+    blacklistCache = event.detail || [];
+  });
+
+  // Universal blacklist API wrapper that automatically updates cache
+  window.blacklistAPI = {
+    async add(word) {
+      try {
+        const r = await fetch('/api/blacklist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ word })
+        });
+        if (r.ok) {
+          const data = await r.json();
+          if (r.headers.get('X-Blacklist-Updated') === 'true') {
+            blacklistCache = data.blacklist || [];
+            console.log('[FRONTEND] Blacklist cache updated after add:', blacklistCache);
+            window.dispatchEvent(new CustomEvent('blacklistUpdated', { detail: data.blacklist }));
+          }
+          return data;
+        }
+      } catch (e) {
+        console.error('[FRONTEND] Error adding blacklist word:', e);
+      }
+      return null;
+    },
+    
+    async remove(word) {
+      try {
+        const r = await fetch(`/api/blacklist?word=${encodeURIComponent(word)}`, {
+          method: 'DELETE'
+        });
+        if (r.ok) {
+          const data = await r.json();
+          if (r.headers.get('X-Blacklist-Updated') === 'true') {
+            blacklistCache = data.blacklist || [];
+            console.log('[FRONTEND] Blacklist cache updated after remove:', blacklistCache);
+            window.dispatchEvent(new CustomEvent('blacklistUpdated', { detail: data.blacklist }));
+          }
+          return data;
+        }
+      } catch (e) {
+        console.error('[FRONTEND] Error removing blacklist word:', e);
+      }
+      return null;
+    }
+  };
 
   function checkBlacklist(message) {
     if (!blacklistCache.length) return [];

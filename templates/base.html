@@ -241,18 +241,34 @@
     if (!word) return;
     
     try {
-      const r = await fetch('/api/blacklist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ word })
-      });
-      if (r.ok) {
-        const data = await r.json();
-        renderBlacklist(data.blacklist);
-        blacklistInput.value = '';
-        // Refresh the blacklist cache in the main page
-        if (window.loadBlacklist) {
-          window.loadBlacklist();
+      // Use the universal blacklist API if available, otherwise fallback to direct fetch
+      if (window.blacklistAPI) {
+        const data = await window.blacklistAPI.add(word);
+        if (data) {
+          renderBlacklist(data.blacklist);
+          blacklistInput.value = '';
+        }
+      } else {
+        const r = await fetch('/api/blacklist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ word })
+        });
+        if (r.ok) {
+          const data = await r.json();
+          renderBlacklist(data.blacklist);
+          blacklistInput.value = '';
+          // Check if blacklist was updated and refresh cache
+          if (r.headers.get('X-Blacklist-Updated') === 'true') {
+            // Refresh the blacklist cache in the main page
+            if (window.loadBlacklist) {
+              window.loadBlacklist();
+            }
+            // Trigger global blacklist update event
+            if (window.dispatchEvent) {
+              window.dispatchEvent(new CustomEvent('blacklistUpdated', { detail: data.blacklist }));
+            }
+          }
         }
       }
     } catch (_) {}
@@ -260,15 +276,30 @@
 
   async function removeBlacklistWord(word) {
     try {
-      const r = await fetch(`/api/blacklist?word=${encodeURIComponent(word)}`, {
-        method: 'DELETE'
-      });
-      if (r.ok) {
-        const data = await r.json();
-        renderBlacklist(data.blacklist);
-        // Refresh the blacklist cache in the main page
-        if (window.loadBlacklist) {
-          window.loadBlacklist();
+      // Use the universal blacklist API if available, otherwise fallback to direct fetch
+      if (window.blacklistAPI) {
+        const data = await window.blacklistAPI.remove(word);
+        if (data) {
+          renderBlacklist(data.blacklist);
+        }
+      } else {
+        const r = await fetch(`/api/blacklist?word=${encodeURIComponent(word)}`, {
+          method: 'DELETE'
+        });
+        if (r.ok) {
+          const data = await r.json();
+          renderBlacklist(data.blacklist);
+          // Check if blacklist was updated and refresh cache
+          if (r.headers.get('X-Blacklist-Updated') === 'true') {
+            // Refresh the blacklist cache in the main page
+            if (window.loadBlacklist) {
+              window.loadBlacklist();
+            }
+            // Trigger global blacklist update event
+            if (window.dispatchEvent) {
+              window.dispatchEvent(new CustomEvent('blacklistUpdated', { detail: data.blacklist }));
+            }
+          }
         }
       }
     } catch (_) {}

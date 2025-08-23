@@ -28,3 +28,16 @@ def test_api_chat_echo(client):
         assert data["reply"].startswith("[openai/gpt-4o-mini]: Hello") or data[
             "reply"
         ].startswith("Hello")
+
+
+def test_copy_functionality_present(client):
+    """Test that the copy message functionality is present in the UI"""
+    resp = client.get("/")
+    assert resp.status_code == 200
+    
+    # Check for copy function definition
+    assert b'function copyMessage' in resp.data
+    
+    # Check for copy button structure in appendMessage function
+    assert b'copy-btn' in resp.data
+    assert b'copyMessage(' in resp.data

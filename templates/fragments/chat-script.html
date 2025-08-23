@@ -587,9 +587,25 @@
     const wrapper = document.createElement('div');
     wrapper.className = `flex items-start gap-3 ${isUser ? 'justify-end' : ''}`;
     const badge = provider && model ? `<div class="text-[10px] text-white/50 mb-1">${escapeHtml(provider)}/${escapeHtml(model)}</div>` : '';
+    
+    // Create unique ID for this message
+    const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
     wrapper.innerHTML = `
       ${isUser ? '' : '<div class="shrink-0 w-8 h-8 rounded-full bg-primary-600/80 grid place-items-center">🧠</div>'}
-      <div class="max-w-3xl">${badge}<div class="rounded-xl border ${isError ? 'border-red-400/60 bg-red-500/10' : 'border-white/10 ' + (isUser ? 'bg-primary-600/20' : 'bg-white/5')} p-3">${escapeHtml(text)}</div></div>
+      <div class="max-w-3xl message-container">
+        ${badge}
+        <div class="rounded-xl border ${isError ? 'border-red-400/60 bg-red-500/10' : 'border-white/10 ' + (isUser ? 'bg-primary-600/20' : 'bg-white/5')} p-3" id="${messageId}">
+          ${escapeHtml(text)}
+        </div>
+        <div class="message-tools mt-2 flex gap-2">
+          <button class="copy-btn text-white/60 hover:text-white/90 transition-colors" onclick="copyMessage('${messageId}')">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
     `;
     messagesEl.appendChild(wrapper);
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -597,6 +613,61 @@
 
   function escapeHtml(str) {
     return str.replace(/[&<>"]+/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  // Copy message to clipboard
+  async function copyMessage(messageId) {
+    try {
+      const messageEl = document.getElementById(messageId);
+      if (!messageEl) return;
+      
+      // Find the copy button for this message - it's in the next sibling div
+      const messageContainer = messageEl.parentElement;
+      const copyBtn = messageContainer.querySelector('.copy-btn');
+      if (!copyBtn) return;
+      
+      const originalSvg = copyBtn.innerHTML;
+      
+      // Get the text content, preserving line breaks
+      const text = messageEl.textContent || messageEl.innerText;
+      
+      // Use the Clipboard API if available
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for older browsers or non-secure contexts
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        textArea.style.top = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        textArea.remove();
+      }
+      
+      // Show green checkmark for 2 seconds
+      copyBtn.innerHTML = `
+        <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+        </svg>
+      `;
+      copyBtn.classList.remove('text-white/60', 'hover:text-white/90');
+      copyBtn.classList.add('text-green-500');
+      
+      // Restore original icon after 2 seconds
+      setTimeout(() => {
+        copyBtn.innerHTML = originalSvg;
+        copyBtn.classList.add('text-white/60', 'hover:text-white/90');
+        copyBtn.classList.remove('text-green-500');
+      }, 2000);
+      
+    } catch (err) {
+      console.error('Failed to copy message:', err);
+      showToast('Failed to copy message');
+    }
   }
 
   // Project management functions

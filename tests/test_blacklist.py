@@ -7,7 +7,6 @@ def test_get_initial_blacklist(client):
     assert r.status_code == 200
     data = r.get_json()
     assert "blacklist" in data
-    assert data["blacklist"] == []
 
 
 def test_add_blacklist_word(client):

@@ -1,5 +1,6 @@
 # Ensure the project root is on sys.path so `import app` works when running pytest
 import sys
+import json
 from pathlib import Path
 import pytest
 
@@ -15,10 +16,24 @@ from database import init_db  # noqa: E402
 def client(tmp_path):
     """Flask test client backed by a fresh temp SQLite database per test."""
     # Prepare isolated providers.json BEFORE app creation so factory picks it up
-    providers_src = Path(ROOT / "static" / "providers.json")
+    # Always use providers_template.json as the baseline for tests
+    providers_template = Path(ROOT / "static" / "providers_template.json")
     providers_dst = tmp_path / "providers.json"
-    if providers_src.exists():
-        providers_dst.write_text(providers_src.read_text(encoding="utf-8"), encoding="utf-8")
+    if providers_template.exists():
+        providers_dst.write_text(providers_template.read_text(encoding="utf-8"), encoding="utf-8")
+    else:
+        # Fallback minimal providers config if template doesn't exist
+        minimal_config = {
+            "default": {"provider": "openai", "model": "gpt-4o"},
+            "favorites": [],
+            "providers": [
+                {"id": "openai", "name": "OpenAI", "models": ["gpt-4o", "gpt-5-mini"]},
+                {"id": "gemini", "name": "Google Gemini", "models": ["gemini-2.5-flash"]}
+            ],
+            "blacklist": []
+        }
+        providers_dst.write_text(json.dumps(minimal_config, indent=2), encoding="utf-8")
+    
     import os
     os.environ["PROVIDERS_JSON_PATH"] = str(providers_dst)
 

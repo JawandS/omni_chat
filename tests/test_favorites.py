@@ -1,4 +1,8 @@
-"""Tests for favorites and default model provider configuration endpoints."""
+"""Tests for favorites and d    # Remove favorite
+    rem = client.delete("/api/favorites?provider=openai&model=gpt-4o")
+    assert rem.status_code == 200
+    favs3 = rem.get_json()["favorites"]
+    assert "openai:gpt-4o" not in favs3t model provider configuration endpoints."""
 
 import json
 from pathlib import Path
@@ -14,20 +18,20 @@ def test_get_initial_favorites(client):
 
 
 def test_add_and_remove_favorite_round_trip(client):
-    # Add a favorite (choose one known from providers.json)
-    add = client.post("/api/favorites", json={"provider": "openai", "model": "gpt-4o-mini"})
+    # Add a favorite (choose one known from providers_template.json)
+    add = client.post("/api/favorites", json={"provider": "openai", "model": "gpt-4o"})
     assert add.status_code == 200
     favs = add.get_json()["favorites"]
-    assert "openai:gpt-4o-mini" in favs
+    assert "openai:gpt-4o" in favs
 
     # Idempotent add
-    add2 = client.post("/api/favorites", json={"provider": "openai", "model": "gpt-4o-mini"})
+    add2 = client.post("/api/favorites", json={"provider": "openai", "model": "gpt-4o"})
     assert add2.status_code == 200
     favs2 = add2.get_json()["favorites"]
-    assert favs2.count("openai:gpt-4o-mini") == 1
+    assert favs2.count("openai:gpt-4o") == 1
 
     # Remove favorite
-    rem = client.delete("/api/favorites?provider=openai&model=gpt-4o-mini")
+    rem = client.delete("/api/favorites?provider=openai&model=gpt-4o")
     assert rem.status_code == 200
     favs3 = rem.get_json()["favorites"]
     assert "openai:gpt-4o-mini" not in favs3

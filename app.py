@@ -22,6 +22,13 @@ from database import (
     get_messages,
     update_chat as db_update_chat,
     delete_chat,
+    create_project,
+    list_projects,
+    get_project,
+    delete_project,
+    add_chat_to_project,
+    remove_chat_from_project,
+    list_chats_by_project,
 )
 from chat import generate_reply, generate_reply_stream, is_ollama_available, start_ollama_server, get_ollama_models
 
@@ -735,6 +742,137 @@ def create_app() -> Flask:
             return jsonify({"error": "unknown provider"}), 400
 
         return jsonify({"provider": provider, "model": model, "params": params})
+
+    # Project management endpoints ------------------------------------------
+
+    @app.get("/api/projects")
+    def api_list_projects():
+        """Get all projects ordered by most recent activity."""
+        try:
+            projects = list_projects()
+            return jsonify({"projects": projects})
+        except Exception:  # pragma: no cover
+            return jsonify({"error": "failed to load projects"}), 500
+
+    @app.post("/api/projects")
+    def api_create_project():
+        """Create a new project.
+        
+        Expected JSON body:
+            {
+                "name": str
+            }
+        """
+        try:
+            data = request.get_json(silent=True) or {}
+            name = (data.get("name") or "").strip()
+            if not name:
+                return jsonify({"error": "name is required"}), 400
+            
+            now = datetime.now(UTC).isoformat()
+            project_id = create_project(name, now)
+            commit()
+            
+            project = get_project(project_id)
+            return jsonify({"project": project})
+        except Exception:  # pragma: no cover
+            return jsonify({"error": "failed to create project"}), 500
+
+    @app.get("/api/projects/<int:project_id>")
+    def api_get_project(project_id: int):
+        """Get a single project with its chats."""
+        try:
+            project = get_project(project_id)
+            if not project:
+                return jsonify({"error": "project not found"}), 404
+            
+            chats = list_chats_by_project(project_id)
+            return jsonify({"project": project, "chats": chats})
+        except Exception:  # pragma: no cover
+            return jsonify({"error": "failed to load project"}), 500
+
+    @app.delete("/api/projects/<int:project_id>")
+    def api_delete_project(project_id: int):
+        """Delete a project and unassign all its chats."""
+        try:
+            project = get_project(project_id)
+            if not project:
+                return jsonify({"error": "project not found"}), 404
+            
+            delete_project(project_id)
+            commit()
+            return jsonify({"ok": True})
+        except Exception:  # pragma: no cover
+            return jsonify({"error": "failed to delete project"}), 500
+
+    @app.post("/api/chats/<int:chat_id>/project")
+    def api_add_chat_to_project(chat_id: int):
+        """Add a chat to a project.
+        
+        Expected JSON body:
+            {
+                "project_id": int
+            }
+        """
+        try:
+            data = request.get_json(silent=True) or {}
+            project_id = data.get("project_id")
+            if not isinstance(project_id, int):
+                return jsonify({"error": "project_id is required"}), 400
+            
+            # Verify chat and project exist
+            chat = db_get_chat(chat_id)
+            if not chat:
+                return jsonify({"error": "chat not found"}), 404
+            
+            project = get_project(project_id)
+            if not project:
+                return jsonify({"error": "project not found"}), 404
+            
+            now = datetime.now(UTC).isoformat()
+            add_chat_to_project(chat_id, project_id, now)
+            commit()
+            
+            return jsonify({"ok": True})
+        except Exception:  # pragma: no cover
+            return jsonify({"error": "failed to add chat to project"}), 500
+
+    @app.delete("/api/chats/<int:chat_id>/project")
+    def api_remove_chat_from_project(chat_id: int):
+        """Remove a chat from its project."""
+        try:
+            chat = db_get_chat(chat_id)
+            if not chat:
+                return jsonify({"error": "chat not found"}), 404
+            
+            now = datetime.now(UTC).isoformat()
+            remove_chat_from_project(chat_id, now)
+            commit()
+            
+            return jsonify({"ok": True})
+        except Exception:  # pragma: no cover
+            return jsonify({"error": "failed to remove chat from project"}), 500
+
+    @app.get("/api/chats/by-project")
+    def api_list_chats_by_project():
+        """Get chats filtered by project.
+        
+        Query params:
+            project_id: int (optional) - if provided, returns chats for that project;
+                       if not provided or null, returns unassigned chats
+        """
+        try:
+            project_id = request.args.get("project_id")
+            if project_id is not None:
+                try:
+                    project_id = int(project_id)
+                except ValueError:
+                    return jsonify({"error": "invalid project_id"}), 400
+            
+            chats = list_chats_by_project(project_id)
+            return jsonify({"chats": chats})
+        except Exception:  # pragma: no cover
+            return jsonify({"error": "failed to load chats"}), 500
 
     return app
 

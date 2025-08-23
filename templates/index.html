@@ -6,14 +6,39 @@ Omni Chat
 
 {% block content %}
 <div class="grid grid-cols-12 gap-4 md:gap-6 h-full min-h-0">
-  <!-- Sidebar: conversation history (placeholder) -->
+  <!-- Sidebar: conversations (projects + chats) -->
   <aside class="hidden md:block col-span-3 min-h-0">
-    <div class="h-full min-h-0 rounded-xl border border-white/10 bg-white/5">
-      <div class="p-4 border-b border-white/10 flex items-center justify-between">
-        <span class="font-medium">History</span>
+    <div class="h-full min-h-0 rounded-xl border border-white/10 bg-white/5 flex flex-col">
+      <!-- Conversations header -->
+      <!-- <div class="p-4 border-b border-white/10 flex items-center justify-between">
+        <span class="font-medium">Conversations</span>
         <button id="clear-history" class="text-sm text-white/70 hover:text-white">Clear</button>
       </div>
-      <div id="history" class="p-3 space-y-2 overflow-auto h-[calc(100%-3.25rem)]"></div>
+       -->
+      <!-- Conversations content - scrollable -->
+      <div class="flex-1 min-h-0 overflow-auto">
+        <!-- Projects card -->
+        <div class="p-3 border-b border-white/10">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium text-white/80">Projects</span>
+            <button id="new-project" class="text-xs text-primary-400 hover:text-primary-300" title="New Project">+ New Project</button>
+          </div>
+          <div id="projects-list" class="space-y-1">
+            <!-- Projects will be loaded here -->
+          </div>
+        </div>
+        
+        <!-- Chats card -->
+        <div class="p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-sm font-medium text-white/80">Chats</span>
+            <button id="new-chat-sidebar" class="text-xs text-primary-400 hover:text-primary-300" title="New Chat">+ New Chat</button>
+          </div>
+          <div id="chats-list" class="space-y-1">
+            <!-- Chats will be loaded here -->
+          </div>
+        </div>
+      </div>
     </div>
   </aside>
 
@@ -142,6 +167,76 @@ Omni Chat
   </div>
 </div>
 
+<!-- New Project Modal -->
+<div id="project-overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity z-50 flex items-center justify-center p-4">
+  <div id="project-modal" class="w-full max-w-md bg-neutral-900 border border-white/15 rounded-2xl shadow-2xl ring-1 ring-black/60 opacity-0 scale-95 transition-all">
+    <div class="px-5 py-4 border-b border-white/10">
+      <h3 class="text-lg font-semibold">New Project</h3>
+    </div>
+    <div class="p-5">
+      <label for="project-name" class="block text-sm font-medium text-white/80 mb-2">Project Name</label>
+      <input type="text" id="project-name" placeholder="Enter project name..." class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 placeholder-white/40" />
+    </div>
+    <div class="px-5 py-4 border-t border-white/10 flex justify-end gap-3">
+      <button id="project-cancel" class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white/80 hover:text-white transition">Cancel</button>
+      <button id="project-create" class="px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-500 text-sm font-medium transition">Create Project</button>
+    </div>
+  </div>
+</div>
+
+<!-- Chat Actions Modal -->
+<div id="chat-actions-overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity z-50 flex items-center justify-center p-4">
+  <div id="chat-actions-modal" class="w-full max-w-md bg-neutral-900 border border-white/15 rounded-2xl shadow-2xl ring-1 ring-black/60 opacity-0 scale-95 transition-all">
+    <div class="px-5 py-4 border-b border-white/10">
+      <h3 class="text-lg font-semibold">Chat Actions</h3>
+    </div>
+    <div class="p-5">
+      <div class="space-y-3">
+        <button id="delete-chat-action" class="w-full text-left px-3 py-2 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-300 transition">
+          Delete Chat
+        </button>
+        <div>
+          <label class="block text-sm font-medium text-white/80 mb-2">Add to Project</label>
+          <select id="project-select" class="w-full appearance-none text-white bg-white/10 border border-white/10 rounded-lg pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-400/40 hover:bg-white/15 transition">
+            <option value="">Select project...</option>
+          </select>
+        </div>
+        <div class="text-center">
+          <button id="create-new-project-for-chat" class="text-xs text-primary-400 hover:text-primary-300">+ Create New Project</button>
+        </div>
+      </div>
+    </div>
+    <div class="px-5 py-4 border-t border-white/10 flex justify-end gap-3">
+      <button id="chat-actions-cancel" class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white/80 hover:text-white transition">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Project Modal -->
+<div id="delete-project-overlay" class="fixed inset-0 bg-black/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity z-50 flex items-center justify-center p-4">
+  <div id="delete-project-modal" class="w-full max-w-md bg-neutral-900 border border-red-400/30 rounded-2xl shadow-2xl ring-1 ring-black/60 opacity-0 scale-95 transition-all">
+    <div class="px-5 py-4 border-b border-red-400/20">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-red-500/20 text-red-400">
+          ⚠️
+        </span>
+        <h3 class="text-lg font-semibold text-red-300">Delete Project</h3>
+      </div>
+    </div>
+    <div class="p-5">
+      <p class="text-white/90 mb-3">Are you sure you want to delete this project?</p>
+      <div class="bg-yellow-500/10 border border-yellow-400/20 rounded-lg p-3 mb-4">
+        <p class="text-yellow-200 text-sm">All chats in this project will be unassigned but not deleted. This action cannot be undone.</p>
+      </div>
+      <p id="delete-project-name" class="text-white/70 text-sm font-medium"></p>
+    </div>
+    <div class="px-5 py-4 border-t border-white/10 flex justify-end gap-3">
+      <button id="delete-project-cancel" class="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-sm text-white/80 hover:text-white transition">Cancel</button>
+      <button id="delete-project-confirm" class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-sm font-medium transition">Delete Project</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const providerEl = document.getElementById('provider');
   const favoriteModelEl = document.getElementById('favorite-model');
@@ -151,7 +246,9 @@ Omni Chat
   const composerEl = document.getElementById('composer');
   const inputEl = document.getElementById('input');
   const newChatEl = document.getElementById('new-chat');
-  const historyEl = document.getElementById('history');
+  const newChatSidebarEl = document.getElementById('new-chat-sidebar');
+  const projectsListEl = document.getElementById('projects-list');
+  const chatsListEl = document.getElementById('chats-list');
   const clearHistoryEl = document.getElementById('clear-history');
   const chatTitleEl = document.getElementById('chat-title');
   const deleteChatEl = document.getElementById('delete-chat');
@@ -171,6 +268,29 @@ Omni Chat
   const detectedWords = document.getElementById('detected-words');
   const blacklistCancel = document.getElementById('blacklist-cancel');
   const blacklistProceed = document.getElementById('blacklist-proceed');
+
+  // Project modal elements
+  const newProjectBtn = document.getElementById('new-project');
+  const projectOverlay = document.getElementById('project-overlay');
+  const projectModal = document.getElementById('project-modal');
+  const projectNameInput = document.getElementById('project-name');
+  const projectCancelBtn = document.getElementById('project-cancel');
+  const projectCreateBtn = document.getElementById('project-create');
+
+  // Chat actions modal elements
+  const chatActionsOverlay = document.getElementById('chat-actions-overlay');
+  const chatActionsModal = document.getElementById('chat-actions-modal');
+  const deleteChatActionBtn = document.getElementById('delete-chat-action');
+  const projectSelectEl = document.getElementById('project-select');
+  const createNewProjectForChatBtn = document.getElementById('create-new-project-for-chat');
+  const chatActionsCancelBtn = document.getElementById('chat-actions-cancel');
+
+  // Delete project modal elements
+  const deleteProjectOverlay = document.getElementById('delete-project-overlay');
+  const deleteProjectModal = document.getElementById('delete-project-modal');
+  const deleteProjectNameEl = document.getElementById('delete-project-name');
+  const deleteProjectCancelBtn = document.getElementById('delete-project-cancel');
+  const deleteProjectConfirmBtn = document.getElementById('delete-project-confirm');
 
   // In-memory current param values keyed by name
   let currentParams = {};
@@ -290,6 +410,11 @@ Omni Chat
   let defaultSelection = { provider: null, model: null };
   let history = [];
   let currentChatId = null;
+  let currentProjectId = null; // Currently selected project filter (null = unassigned chats)
+  let projects = [];
+  let chats = [];
+  let currentChatForActions = null; // Chat being acted upon in the actions modal
+  let currentProjectForDeletion = null; // Project being deleted in the delete modal
   let isSubmitting = false; // Flag to prevent duplicate submissions
 
   async function loadProviders() {
@@ -511,34 +636,142 @@ Omni Chat
   }
   // remove old listener already replaced
 
-  async function loadHistory() {
+  async function loadProjects() {
     try {
-      // Avoid stale cached responses (some browsers may cache GET /api/chats)
-      const res = await fetch('/api/chats', { cache: 'no-store' });
+      const res = await fetch('/api/projects', { cache: 'no-store' });
       const data = await res.json();
-      const chats = data.chats || [];
-      historyEl.innerHTML = '';
-      const newBtn = document.createElement('button');
-      newBtn.className = 'w-full text-left px-3 py-2 rounded-lg bg-white/0 hover:bg-white/10 transition';
-      newBtn.textContent = 'New chat…';
-      newBtn.addEventListener('click', () => startNewChat());
-      historyEl.appendChild(newBtn);
-      if (!chats.length) {
-        const empty = document.createElement('div');
-        empty.className = 'text-white/60 text-sm';
-        empty.textContent = 'No previous chats yet.';
-        historyEl.appendChild(empty);
-      }
-      for (const c of chats) {
-        const btn = document.createElement('button');
-        btn.className = 'w-full text-left px-3 py-2 rounded-lg bg-white/0 hover:bg-white/10 transition';
-        btn.innerHTML = `<div class="flex items-center justify-between"><span class="truncate">${escapeHtml(c.title || 'Untitled')}</span><span class="text-xs text-white/40 ms-2">${escapeHtml(c.provider || '')}</span></div>`;
-        btn.addEventListener('click', () => openChat(c.id));
-        historyEl.appendChild(btn);
-      }
+      projects = data.projects || [];
+      renderProjects();
     } catch (e) {
-      // ignore
+      console.error('Failed to load projects:', e);
     }
+  }
+
+  async function loadChats() {
+    try {
+      // Load chats filtered by current project
+      const url = currentProjectId !== null 
+        ? `/api/chats/by-project?project_id=${currentProjectId}`
+        : '/api/chats/by-project';
+      const res = await fetch(url, { cache: 'no-store' });
+      const data = await res.json();
+      chats = data.chats || [];
+      renderChats();
+    } catch (e) {
+      console.error('Failed to load chats:', e);
+    }
+  }
+
+  function renderProjects() {
+    projectsListEl.innerHTML = '';
+    
+    if (!projects.length) {
+      const empty = document.createElement('div');
+      empty.className = 'text-white/60 text-xs';
+      empty.textContent = 'No projects yet.';
+      projectsListEl.appendChild(empty);
+      return;
+    }
+
+    // Show first 3 projects, then "show more" for the rest
+    const visibleProjects = projects.slice(0, 3);
+    const hiddenProjects = projects.slice(3);
+
+    visibleProjects.forEach(project => {
+      projectsListEl.appendChild(createProjectElement(project));
+    });
+
+    if (hiddenProjects.length > 0) {
+      const showMoreBtn = document.createElement('button');
+      showMoreBtn.className = 'w-full text-left px-2 py-1 text-xs text-white/60 hover:text-white transition';
+      showMoreBtn.textContent = `Show ${hiddenProjects.length} more...`;
+      showMoreBtn.addEventListener('click', () => {
+        showMoreBtn.remove();
+        hiddenProjects.forEach(project => {
+          projectsListEl.appendChild(createProjectElement(project));
+        });
+      });
+      projectsListEl.appendChild(showMoreBtn);
+    }
+  }
+
+  function createProjectElement(project) {
+    const projectEl = document.createElement('div');
+    projectEl.className = `relative flex items-center gap-2 px-2 py-1 rounded text-sm cursor-pointer hover:bg-white/10 transition ${
+      currentProjectId === project.id ? 'bg-primary-600/20 text-primary-300' : 'text-white/80'
+    }`;
+    
+    projectEl.innerHTML = `
+      <span class="flex-1 truncate" onclick="selectProject(${project.id})">${escapeHtml(project.name)}</span>
+      <span class="text-xs text-white/40">${project.chat_count || 0}</span>
+      <button class="text-white/40 hover:text-white opacity-0 group-hover:opacity-100 transition text-xs" onclick="showProjectMenu(event, ${project.id})" title="Project actions">⋮</button>
+    `;
+    
+    // Add hover effect to show the menu button
+    projectEl.addEventListener('mouseenter', () => {
+      const btn = projectEl.querySelector('button');
+      btn.style.opacity = '1';
+    });
+    projectEl.addEventListener('mouseleave', () => {
+      const btn = projectEl.querySelector('button');
+      btn.style.opacity = '0';
+    });
+
+    return projectEl;
+  }
+
+  function renderChats() {
+    chatsListEl.innerHTML = '';
+    
+    if (!chats.length) {
+      const empty = document.createElement('div');
+      empty.className = 'text-white/60 text-xs';
+      empty.textContent = currentProjectId !== null 
+        ? 'No chats in this project yet.'
+        : 'No unassigned chats yet.';
+      chatsListEl.appendChild(empty);
+      return;
+    }
+
+    chats.forEach(chat => {
+      chatsListEl.appendChild(createChatElement(chat));
+    });
+  }
+
+  function createChatElement(chat) {
+    const chatEl = document.createElement('div');
+    chatEl.className = `relative flex items-center gap-2 px-2 py-1 rounded text-sm cursor-pointer hover:bg-white/10 transition ${
+      currentChatId === chat.id ? 'bg-primary-600/20 text-primary-300' : 'text-white/80'
+    }`;
+    
+    chatEl.innerHTML = `
+      <span class="flex-1 truncate" onclick="openChat(${chat.id})">${escapeHtml(chat.title || 'Untitled')}</span>
+      <span class="text-xs text-white/40">${escapeHtml(chat.provider || '')}</span>
+      <button class="text-white/40 hover:text-white opacity-0 transition text-xs" onclick="showChatActions(event, ${chat.id})" title="Chat actions">⋮</button>
+    `;
+    
+    // Add hover effect to show the menu button
+    chatEl.addEventListener('mouseenter', () => {
+      const btn = chatEl.querySelector('button');
+      btn.style.opacity = '1';
+    });
+    chatEl.addEventListener('mouseleave', () => {
+      const btn = chatEl.querySelector('button');
+      btn.style.opacity = '0';
+    });
+
+    return chatEl;
+  }
+
+  function selectProject(projectId) {
+    // Toggle selection: if clicking the same project, deselect it
+    if (currentProjectId === projectId) {
+      currentProjectId = null;
+    } else {
+      currentProjectId = projectId;
+    }
+    loadChats();
+    renderProjects(); // Re-render to update selection highlighting
   }
 
   async function openChat(id) {
@@ -559,8 +792,9 @@ Omni Chat
         appendMessage(m.role, m.content, m.provider, m.model);
         history.push({ role: m.role, content: m.content });
       }
+      renderChats(); // Re-render to update selection highlighting
     } catch (e) {
-      // ignore
+      console.error('Failed to open chat:', e);
     }
   }
 
@@ -583,6 +817,7 @@ Omni Chat
     }
     
     appendMessage('assistant', 'New chat started. How can I help?');
+    renderChats(); // Update sidebar to reflect current selection
   }
 
   function appendMessage(role, text, provider = null, model = null, isError = false) {
@@ -600,6 +835,189 @@ Omni Chat
 
   function escapeHtml(str) {
     return str.replace(/[&<>"]+/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  // Project management functions
+  function showProjectModal() {
+    projectNameInput.value = '';
+    projectOverlay.style.opacity = '1';
+    projectOverlay.style.pointerEvents = 'auto';
+    projectModal.style.opacity = '1';
+    projectModal.style.transform = 'scale(1)';
+    projectNameInput.focus();
+  }
+
+  function hideProjectModal() {
+    projectOverlay.style.opacity = '0';
+    projectOverlay.style.pointerEvents = 'none';
+    projectModal.style.opacity = '0';
+    projectModal.style.transform = 'scale(0.95)';
+  }
+
+  async function createProject() {
+    const name = projectNameInput.value.trim();
+    if (!name) return;
+
+    try {
+      const res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+
+      if (res.ok) {
+        hideProjectModal();
+        loadProjects();
+        showToast('Project created successfully');
+      } else {
+        const data = await res.json();
+        showToast(data.error || 'Failed to create project');
+      }
+    } catch (e) {
+      showToast('Failed to create project');
+    }
+  }
+
+  function showProjectMenu(event, projectId) {
+    event.stopPropagation();
+    // Find the project name for display in modal
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
+    
+    currentProjectForDeletion = projectId;
+    deleteProjectNameEl.textContent = `Project: ${project.name}`;
+    showDeleteProjectModal();
+  }
+
+  async function deleteProject(projectId) {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, { method: 'DELETE' });
+      if (res.ok) {
+        // If the deleted project was selected, reset to unassigned chats
+        if (currentProjectId === projectId) {
+          currentProjectId = null;
+          loadChats();
+        }
+        loadProjects();
+        showToast('Project deleted successfully');
+      } else {
+        showToast('Failed to delete project');
+      }
+    } catch (e) {
+      showToast('Failed to delete project');
+    }
+  }
+
+  // Delete project modal functions
+  function showDeleteProjectModal() {
+    deleteProjectOverlay.style.opacity = '1';
+    deleteProjectOverlay.style.pointerEvents = 'auto';
+    deleteProjectModal.style.opacity = '1';
+    deleteProjectModal.style.transform = 'scale(1)';
+  }
+
+  function hideDeleteProjectModal() {
+    deleteProjectOverlay.style.opacity = '0';
+    deleteProjectOverlay.style.pointerEvents = 'none';
+    deleteProjectModal.style.opacity = '0';
+    deleteProjectModal.style.transform = 'scale(0.95)';
+    currentProjectForDeletion = null;
+  }
+
+  function confirmDeleteProject() {
+    if (currentProjectForDeletion) {
+      deleteProject(currentProjectForDeletion);
+      hideDeleteProjectModal();
+    }
+  }
+
+  // Chat actions functions
+  function showChatActions(event, chatId) {
+    event.stopPropagation();
+    currentChatForActions = chatId;
+    loadProjectsForSelect();
+    showChatActionsModal();
+  }
+
+  function showChatActionsModal() {
+    chatActionsOverlay.style.opacity = '1';
+    chatActionsOverlay.style.pointerEvents = 'auto';
+    chatActionsModal.style.opacity = '1';
+    chatActionsModal.style.transform = 'scale(1)';
+  }
+
+  function hideChatActionsModal() {
+    chatActionsOverlay.style.opacity = '0';
+    chatActionsOverlay.style.pointerEvents = 'none';
+    chatActionsModal.style.opacity = '0';
+    chatActionsModal.style.transform = 'scale(0.95)';
+    currentChatForActions = null;
+  }
+
+  async function loadProjectsForSelect() {
+    try {
+      const res = await fetch('/api/projects', { cache: 'no-store' });
+      const data = await res.json();
+      const projectsData = data.projects || [];
+      
+      projectSelectEl.innerHTML = '<option value="">Select project...</option>';
+      projectsData.forEach(project => {
+        const option = document.createElement('option');
+        option.value = project.id;
+        option.textContent = project.name;
+        projectSelectEl.appendChild(option);
+      });
+    } catch (e) {
+      console.error('Failed to load projects for select:', e);
+    }
+  }
+
+  async function addChatToProject() {
+    const projectId = parseInt(projectSelectEl.value);
+    if (!projectId || !currentChatForActions) return;
+
+    try {
+      const res = await fetch(`/api/chats/${currentChatForActions}/project`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: projectId })
+      });
+
+      if (res.ok) {
+        hideChatActionsModal();
+        loadChats();
+        loadProjects(); // Update project chat counts
+        showToast('Chat added to project');
+      } else {
+        showToast('Failed to add chat to project');
+      }
+    } catch (e) {
+      showToast('Failed to add chat to project');
+    }
+  }
+
+  async function deleteChatFromActions() {
+    if (!currentChatForActions) return;
+    
+    const confirmed = confirm('Delete this chat? This action cannot be undone.');
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/chats/${currentChatForActions}`, { method: 'DELETE' });
+      if (res.ok) {
+        hideChatActionsModal();
+        if (currentChatId === currentChatForActions) {
+          startNewChat();
+        }
+        loadChats();
+        loadProjects();
+        showToast('Chat deleted successfully');
+      } else {
+        showToast('Failed to delete chat');
+      }
+    } catch (e) {
+      showToast('Failed to delete chat');
+    }
   }
 
   composerEl.addEventListener('submit', async (e) => {
@@ -714,7 +1132,7 @@ Omni Chat
                 if (data.title && !title) chatTitleEl.value = data.title;
                 // Ensure sidebar history reflects newly created chat immediately
                 // (previously only refreshed after full streaming completion)
-                loadHistory();
+                loadChats();
               } else if (data.type === 'token') {
                 // Start streaming: hide loading, show streaming content and typing indicator
                 if (!streamingStarted) {
@@ -764,7 +1182,7 @@ Omni Chat
                 // Now add both user and assistant messages to history
                 history.push({ role: 'user', content: message });
                 history.push({ role: 'assistant', content: fullReply });
-                loadHistory();
+                loadChats();
                 isSubmitting = false; // Reset flag on completion
                 return;
               }
@@ -829,7 +1247,7 @@ Omni Chat
         } catch (_) {
           startNewChat();
         }
-        loadHistory();
+        loadChats();
         showToast('Chat deleted');
       } else {
         showToast('Delete failed');
@@ -847,7 +1265,7 @@ Omni Chat
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title })
     });
-    loadHistory();
+    loadChats();
   });
 
   clearHistoryEl?.addEventListener('click', async () => {
@@ -883,8 +1301,10 @@ Omni Chat
         
         // Reset UI to new chat state
         currentChatId = null;
+        currentProjectId = null;
         startNewChat();
-        loadHistory();
+        loadProjects();
+        loadChats();
       } else {
         showToast('Failed to clear history');
       }
@@ -894,8 +1314,96 @@ Omni Chat
     }
   });
 
+  // Add event listeners for new sidebar buttons
+  newChatSidebarEl.addEventListener('click', () => {
+    startNewChat();
+  });
+
+  // Project modal event listeners
+  newProjectBtn.addEventListener('click', () => {
+    showProjectModal();
+  });
+
+  projectCancelBtn.addEventListener('click', () => {
+    hideProjectModal();
+  });
+
+  projectCreateBtn.addEventListener('click', () => {
+    createProject();
+  });
+
+  projectOverlay.addEventListener('click', (e) => {
+    if (e.target === projectOverlay) hideProjectModal();
+  });
+
+  projectNameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      createProject();
+    } else if (e.key === 'Escape') {
+      hideProjectModal();
+    }
+  });
+
+  // Chat actions modal event listeners
+  deleteChatActionBtn.addEventListener('click', () => {
+    deleteChatFromActions();
+  });
+
+  projectSelectEl.addEventListener('change', () => {
+    if (projectSelectEl.value) {
+      addChatToProject();
+    }
+  });
+
+  createNewProjectForChatBtn.addEventListener('click', () => {
+    hideChatActionsModal();
+    showProjectModal();
+  });
+
+  chatActionsCancelBtn.addEventListener('click', () => {
+    hideChatActionsModal();
+  });
+
+  chatActionsOverlay.addEventListener('click', (e) => {
+    if (e.target === chatActionsOverlay) hideChatActionsModal();
+  });
+
+  // Delete project modal event listeners
+  deleteProjectCancelBtn.addEventListener('click', () => {
+    hideDeleteProjectModal();
+  });
+
+  deleteProjectConfirmBtn.addEventListener('click', () => {
+    confirmDeleteProject();
+  });
+
+  deleteProjectOverlay.addEventListener('click', (e) => {
+    if (e.target === deleteProjectOverlay) hideDeleteProjectModal();
+  });
+
+  // Global escape key handler for modals
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      // Close modals in priority order (most recently opened first)
+      if (deleteProjectOverlay.style.pointerEvents === 'auto') {
+        hideDeleteProjectModal();
+      } else if (chatActionsOverlay.style.pointerEvents === 'auto') {
+        hideChatActionsModal();
+      } else if (projectOverlay.style.pointerEvents === 'auto') {
+        hideProjectModal();
+      }
+    }
+  });
+
+  // Make functions globally accessible for onclick handlers
+  window.selectProject = selectProject;
+  window.showProjectMenu = showProjectMenu;
+  window.showChatActions = showChatActions;
+
   loadProviders();
-  loadHistory();
+  loadProjects();
+  loadChats();
   loadBlacklist(); // Ensure blacklist is loaded
 </script>
 {% endblock %}

@@ -52,13 +52,21 @@ def init_db() -> None:
     db = get_db()
     db.executescript(
         """
+        CREATE TABLE IF NOT EXISTS projects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS chats (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             provider TEXT,
             model TEXT,
+            project_id INTEGER,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE SET NULL
         );
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,6 +82,7 @@ def init_db() -> None:
     )
     db.commit()
     _ensure_message_columns_exist()
+    _ensure_project_columns_exist()
 
 
 def _ensure_message_columns_exist() -> None:
@@ -90,6 +99,19 @@ def _ensure_message_columns_exist() -> None:
         for stmt in columns_to_add:
             db.execute(stmt)
         if columns_to_add:
+            db.commit()
+    except Exception:
+        # Best-effort migration; ignore if PRAGMA or ALTER not supported
+        pass
+
+
+def _ensure_project_columns_exist() -> None:
+    """Lightweight migration to ensure project_id column exists on chats table."""
+    try:
+        db = get_db()
+        cols = [r[1] for r in db.execute("PRAGMA table_info(chats)").fetchall()]
+        if "project_id" not in cols:
+            db.execute("ALTER TABLE chats ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
             db.commit()
     except Exception:
         # Best-effort migration; ignore if PRAGMA or ALTER not supported
@@ -330,3 +352,129 @@ def delete_all_history() -> dict[str, int]:
     db.execute("DELETE FROM chats")
     
     return counts
+
+
+# Project management functions -----------------------------------------------
+
+
+def create_project(name: str, now: Optional[str] = None) -> int:
+    """Create a new project.
+
+    Args:
+        name: The project name.
+        now: Optional timestamp. If None, current time is used.
+
+    Returns:
+        The ID of the created project.
+    """
+    db = get_db()
+    ts = _get_timestamp(now)
+    cur = db.execute(
+        "INSERT INTO projects (name, created_at, updated_at) VALUES (?, ?, ?)",
+        (name, ts, ts),
+    )
+    last_id = cur.lastrowid
+    if not isinstance(last_id, int):
+        raise RuntimeError("SQLite cursor did not return an integer lastrowid")
+    return last_id
+
+
+def list_projects() -> list:
+    """Get all projects ordered by most recent activity.
+
+    Returns:
+        List of project records with id, name, created_at, updated_at, and chat_count.
+    """
+    db = get_db()
+    projects = db.execute(
+        """
+        SELECT p.id, p.name, p.created_at, p.updated_at,
+               COUNT(c.id) as chat_count,
+               MAX(c.updated_at) as last_chat_activity
+        FROM projects p
+        LEFT JOIN chats c ON p.id = c.project_id
+        GROUP BY p.id, p.name, p.created_at, p.updated_at
+        ORDER BY last_chat_activity DESC, p.updated_at DESC
+        """
+    ).fetchall()
+    return [dict(row) for row in projects]
+
+
+def get_project(project_id: int) -> Optional[dict]:
+    """Get a single project by ID.
+
+    Args:
+        project_id: The project ID to retrieve.
+
+    Returns:
+        Project record or None if not found.
+    """
+    row = get_db().execute(
+        "SELECT id, name, created_at, updated_at FROM projects WHERE id = ?",
+        (project_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def delete_project(project_id: int) -> None:
+    """Delete a project and set all its chats' project_id to NULL.
+
+    Args:
+        project_id: The project ID to delete.
+    """
+    db = get_db()
+    # Update chats to remove project association
+    db.execute("UPDATE chats SET project_id = NULL WHERE project_id = ?", (project_id,))
+    # Delete the project
+    db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+
+
+def add_chat_to_project(chat_id: int, project_id: int, now: Optional[str] = None) -> None:
+    """Add a chat to a project.
+
+    Args:
+        chat_id: The chat ID to add to project.
+        project_id: The project ID to add chat to.
+        now: Optional timestamp. If None, current time is used.
+    """
+    db = get_db()
+    ts = _get_timestamp(now)
+    db.execute("UPDATE chats SET project_id = ?, updated_at = ? WHERE id = ?", (project_id, ts, chat_id))
+    # Update project's updated_at timestamp
+    db.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (ts, project_id))
+
+
+def remove_chat_from_project(chat_id: int, now: Optional[str] = None) -> None:
+    """Remove a chat from its project.
+
+    Args:
+        chat_id: The chat ID to remove from project.
+        now: Optional timestamp. If None, current time is used.
+    """
+    db = get_db()
+    ts = _get_timestamp(now)
+    db.execute("UPDATE chats SET project_id = NULL, updated_at = ? WHERE id = ?", (ts, chat_id))
+
+
+def list_chats_by_project(project_id: Optional[int] = None) -> list:
+    """Get chats filtered by project.
+
+    Args:
+        project_id: Project ID to filter by. If None, returns chats not in any project.
+
+    Returns:
+        List of chat records ordered by most recent update.
+    """
+    db = get_db()
+    if project_id is None:
+        # Get chats not assigned to any project
+        rows = db.execute(
+            "SELECT id, title, provider, model, project_id, created_at, updated_at FROM chats WHERE project_id IS NULL ORDER BY updated_at DESC"
+        ).fetchall()
+    else:
+        # Get chats for specific project
+        rows = db.execute(
+            "SELECT id, title, provider, model, project_id, created_at, updated_at FROM chats WHERE project_id = ? ORDER BY updated_at DESC",
+            (project_id,)
+        ).fetchall()
+    return [dict(row) for row in rows]

@@ -70,7 +70,6 @@ def _create_or_update_chat(
     """
     if not chat_id:
         chat_id = create_chat(title, provider, model, now)
-        logging.getLogger(__name__).info(f"Created new chat with ID: {chat_id}")
     else:
         update_chat_meta(chat_id, provider, model, now)
     return chat_id
@@ -85,7 +84,7 @@ def create_app() -> Flask:
     app = Flask(__name__)
 
     # Set up logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.WARNING)
     logger = logging.getLogger(__name__)
 
     # Safety check: warn if running in apparent test mode without proper test setup
@@ -128,9 +127,6 @@ def create_app() -> Flask:
             data = request.get_json(silent=True) or {}
             message, provider, model = _validate_chat_request(data)
 
-            logger.info(f"[NON-STREAMING] Received message: {message[:50]}...")
-            logger.info(f"[NON-STREAMING] Provider: {provider}, Model: {model}")
-
             chat_id = data.get("chat_id")
             title = (data.get("title") or "").strip()
             now = datetime.now(UTC).isoformat()
@@ -148,7 +144,6 @@ def create_app() -> Flask:
             insert_message(
                 chat_id, "user", message, now, provider=provider, model=model
             )
-            logger.info(f"[NON-STREAMING] Saved user message to chat {chat_id}")
 
             # Generate and save assistant reply
             history = data.get("history") or []
@@ -162,7 +157,6 @@ def create_app() -> Flask:
                 provider=provider,
                 model=model,
             )
-            logger.info(f"[NON-STREAMING] Saved assistant reply to chat {chat_id}")
 
             # Update chat timestamp and commit
             touch_chat(chat_id, now)
@@ -205,9 +199,6 @@ def create_app() -> Flask:
             data = request.get_json(silent=True) or {}
             message, provider, model = _validate_chat_request(data)
 
-            logger.info(f"[STREAMING] Received message: {message[:50]}...")
-            logger.info(f"[STREAMING] Provider: {provider}, Model: {model}")
-
             chat_id = data.get("chat_id")
             title = (data.get("title") or "").strip()
             # Capture initial timestamp when request received
@@ -231,7 +222,6 @@ def create_app() -> Flask:
             # Touch chat so it appears/updates in history sidebar right after the user sends a message
             touch_chat(chat_id, user_msg_ts)
             commit()
-            logger.info(f"[STREAMING] Saved user message to chat {chat_id}")
 
             def generate() -> Generator[str, None, None]:
                 """Generator function for streaming response."""
@@ -274,9 +264,6 @@ def create_app() -> Flask:
                                 )
                                 touch_chat(chat_id, assistant_ts)
                                 commit()
-                                logger.info(
-                                    f"[STREAMING] Saved assistant reply to chat {chat_id}"
-                                )
                             except Exception as e:
                                 logger.error(f"[STREAMING] Error saving reply: {e}")
 
@@ -562,7 +549,6 @@ def create_app() -> Flask:
                     template_data = json.load(f)
                 # Copy template to providers.json
                 _write_providers_json(template_data)
-                print(f"Created providers.json from template: {template_path}")
                 return template_data
             except FileNotFoundError:
                 raise FileNotFoundError(f"Required template file not found: {template_path}. Cannot initialize providers configuration.")
@@ -783,7 +769,6 @@ def _initialize_ollama_with_app(app_instance):
                         template_data = json.load(f)
                     # Copy template to providers.json
                     _write_providers_json(template_data)
-                    print(f"Created providers.json from template: {template_path}")
                     return template_data
                 except FileNotFoundError:
                     raise FileNotFoundError(f"Required template file not found: {template_path}. Cannot initialize providers configuration.")
@@ -801,10 +786,8 @@ def _initialize_ollama_with_app(app_instance):
         
         # Check if Ollama is available and get models
         if is_ollama_available():
-            print("Ollama detected, attempting to start server...")
             # Try to start Ollama server if not running
             if start_ollama_server():
-                print("Ollama server started successfully.")
                 # Get available models
                 models = get_ollama_models()
                 if models:
@@ -815,20 +798,16 @@ def _initialize_ollama_with_app(app_instance):
                         "models": models
                     }
                     providers.append(ollama_provider)
-                    print(f"Added Ollama provider with {len(models)} models to providers.json: {models}")
-                else:
-                    print("Ollama server running but no models found - not adding Ollama provider")
-            else:
-                print("Failed to start Ollama server - not adding Ollama provider")
-        else:
-            print("Ollama not available on this system - not adding Ollama provider")
+            # If startup fails, just skip Ollama - not an error worth logging
+        # If Ollama not available, just skip it - this is normal
         
         # Update providers data and save
         data["providers"] = providers
         _write_providers_json(data)
             
     except Exception as e:
-        print(f"Error initializing Ollama: {e}")
+        # Only log errors during Ollama initialization
+        logging.getLogger(__name__).error(f"Error initializing Ollama: {e}")
 
 
 # Create the main application instance

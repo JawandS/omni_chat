@@ -29,35 +29,15 @@ from database import (
     remove_chat_from_project,
     list_chats_by_project,
 )
-from chat import generate_reply, is_ollama_available, start_ollama_server, get_ollama_models
+from chat import generate_reply
 from utils import (
     validate_chat_request,
     generate_chat_title,
     EnvironmentManager,
     ProvidersConfigManager,
+    create_or_update_chat,
+    initialize_ollama_with_app,
 )
-
-
-def _create_or_update_chat(
-    chat_id: Optional[int], title: str, provider: str, model: str, now: str
-) -> int:
-    """Create a new chat or update existing chat metadata.
-
-    Args:
-        chat_id: Optional existing chat ID.
-        title: Chat title.
-        provider: AI provider name.
-        model: AI model name.
-        now: Current timestamp.
-
-    Returns:
-        Chat ID (new or existing).
-    """
-    if not chat_id:
-        chat_id = create_chat(title, provider, model, now)
-    else:
-        update_chat_meta(chat_id, provider, model, now)
-    return chat_id
 
 
 def create_app() -> Flask:
@@ -87,14 +67,18 @@ def create_app() -> Flask:
     # Default path to .env can be overridden in tests via app.config['ENV_PATH']
     app.config.setdefault("ENV_PATH", os.path.join(app.root_path, ".env"))
     
-    # Initialize utility managers
-    env_manager = EnvironmentManager(app.config["ENV_PATH"])
-    
     # Allow tests (or other environments) to override the providers.json path
     providers_json_path = os.environ.get(
         "PROVIDERS_JSON_PATH", os.path.join(app.root_path, "static", "providers.json")
     )
     providers_manager = ProvidersConfigManager(providers_json_path)
+
+    def get_env_manager():
+        """Get the EnvironmentManager instance, creating it lazily with current config."""
+        if not hasattr(get_env_manager, '_instance') or get_env_manager._config_path != app.config["ENV_PATH"]:
+            get_env_manager._instance = EnvironmentManager(app.config["ENV_PATH"])
+            get_env_manager._config_path = app.config["ENV_PATH"]
+        return get_env_manager._instance
 
     @app.route("/")
     def home():
@@ -130,7 +114,7 @@ def create_app() -> Flask:
                 title = generate_chat_title(message)
 
             # Create or update chat
-            chat_id = _create_or_update_chat(chat_id, title, provider, model, now)
+            chat_id = create_or_update_chat(chat_id, title, provider, model, now)
 
             # Save user message
             insert_message(
@@ -329,7 +313,7 @@ def create_app() -> Flask:
         Returns:
             JSON response with current API key values (or empty strings if not set).
         """
-        return jsonify(env_manager.get_api_keys())
+        return jsonify(get_env_manager().get_api_keys())
 
     @app.put("/api/keys")
     def api_put_keys():
@@ -345,7 +329,7 @@ def create_app() -> Flask:
             JSON response with update status and the keys that were updated.
         """
         data = request.get_json(silent=True) or {}
-        updated = env_manager.update_api_keys(data)
+        updated = get_env_manager().update_api_keys(data)
         return jsonify({"ok": True, "updated": updated})
 
     @app.delete("/api/keys/<provider>")
@@ -358,7 +342,7 @@ def create_app() -> Flask:
         Returns:
             JSON response with success status or error if provider is unknown.
         """
-        success = env_manager.delete_api_key(provider)
+        success = get_env_manager().delete_api_key(provider)
         if not success:
             return jsonify({"error": "unknown provider"}), 400
         return jsonify({"ok": True})
@@ -663,53 +647,11 @@ def create_app() -> Flask:
     return app
 
 
-def _initialize_ollama_with_app(app_instance):
-    """Initialize Ollama server and update providers.json at startup."""
-    try:
-        # Create a providers manager for this context
-        providers_json_path = os.environ.get(
-            "PROVIDERS_JSON_PATH", os.path.join(app_instance.root_path, "static", "providers.json")
-        )
-        providers_mgr = ProvidersConfigManager(providers_json_path)
-
-        # Load current providers data
-        data = providers_mgr.load_providers_json()
-        providers = data.get("providers", [])
-        
-        # Remove existing Ollama provider if present
-        providers = [p for p in providers if p.get("id") != "ollama"]
-        
-        # Check if Ollama is available and get models
-        if is_ollama_available():
-            # Try to start Ollama server if not running
-            if start_ollama_server():
-                # Get available models
-                models = get_ollama_models()
-                if models:
-                    # Add Ollama provider with current models
-                    ollama_provider = {
-                        "id": "ollama",
-                        "name": "Ollama (Local)", 
-                        "models": models
-                    }
-                    providers.append(ollama_provider)
-            # If startup fails, just skip Ollama - not an error worth logging
-        # If Ollama not available, just skip it - this is normal
-        
-        # Update providers data and save
-        data["providers"] = providers
-        providers_mgr.write_providers_json(data)
-            
-    except Exception as e:
-        # Only log errors during Ollama initialization
-        logging.getLogger(__name__).error(f"Error initializing Ollama: {e}")
-
-
 # Create the main application instance
 app = create_app()
 
 # Initialize Ollama and update providers.json on startup
-_initialize_ollama_with_app(app)
+initialize_ollama_with_app(app)
 
 
 if __name__ == "__main__":

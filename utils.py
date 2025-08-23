@@ -285,3 +285,206 @@ def sanitize_filename(filename: str) -> str:
     filename = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', filename)
     # Limit length
     return filename[:255]
+
+
+# Database and chat management utilities
+def get_timestamp(now: Optional[str] = None) -> str:
+    """Get current timestamp or provided timestamp.
+
+    Args:
+        now: Optional timestamp string. If None, current UTC time is used.
+
+    Returns:
+        ISO formatted timestamp string.
+    """
+    from datetime import datetime, UTC
+    return now or datetime.now(UTC).isoformat()
+
+
+def get_api_key(provider: str) -> str:
+    """Get API key for the specified provider.
+
+    Args:
+        provider: Provider name ('openai', 'gemini', or 'ollama').
+
+    Returns:
+        API key from environment or empty string if not found.
+    """
+    key_mapping = {
+        "openai": "OPENAI_API_KEY",
+        "gemini": "GEMINI_API_KEY",
+        "ollama": "",  # Ollama doesn't require API key for local usage
+    }
+    env_var = key_mapping.get(provider.lower(), "")
+    if not env_var:  # Ollama case
+        return "local"
+    return os.getenv(env_var, "")
+
+
+def create_or_update_chat(
+    chat_id: Optional[int], title: str, provider: str, model: str, now: str
+) -> int:
+    """Create a new chat or update existing chat metadata.
+
+    Args:
+        chat_id: Optional existing chat ID.
+        title: Chat title.
+        provider: AI provider name.
+        model: AI model name.
+        now: Current timestamp.
+
+    Returns:
+        Chat ID (new or existing).
+    """
+    from database import create_chat, update_chat_meta
+    
+    if not chat_id:
+        chat_id = create_chat(title, provider, model, now)
+    else:
+        update_chat_meta(chat_id, provider, model, now)
+    return chat_id
+
+
+# Ollama utilities
+def is_ollama_available() -> bool:
+    """Check if Ollama is installed and available on the system.
+    
+    Returns:
+        True if ollama command is available, False otherwise.
+    """
+    import subprocess
+    try:
+        subprocess.run(["ollama", "--version"], capture_output=True, check=True, timeout=5)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def is_ollama_server_running() -> bool:
+    """Check if Ollama server is running.
+    
+    Returns:
+        True if server is running, False otherwise.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    try:
+        import requests
+    except ImportError:
+        logger.warning("[OLLAMA] requests library not available for server check")
+        return False
+        
+    try:
+        logger.info("[OLLAMA] Checking if server is running at http://localhost:11434/api/tags")
+        response = requests.get("http://localhost:11434/api/tags", timeout=15)
+        
+        if response.status_code == 200:
+            logger.info("[OLLAMA] Server is running and responding")
+            return True
+        else:
+            logger.warning(f"[OLLAMA] Server responded with status {response.status_code}")
+            return False
+            
+    except requests.RequestException as e:
+        logger.warning(f"[OLLAMA] Server check failed: {type(e).__name__}: {e}")
+        return False
+
+
+def start_ollama_server() -> bool:
+    """Start Ollama server if it's not running.
+    
+    Returns:
+        True if server was started or already running, False on error.
+    """
+    import subprocess
+    import time
+    
+    if is_ollama_server_running():
+        return True
+        
+    if not is_ollama_available():
+        return False
+        
+    try:
+        # Start ollama serve in background
+        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Wait a moment for server to start
+        time.sleep(2)
+        # Check if it's running now
+        return is_ollama_server_running()
+    except Exception:
+        return False
+
+
+def get_ollama_models() -> list:
+    """Get list of available Ollama models.
+    
+    Returns:
+        List of model names, empty if Ollama is not available.
+    """
+    try:
+        import requests
+    except ImportError:
+        return []
+        
+    if not is_ollama_server_running():
+        return []
+        
+    try:
+        response = requests.get("http://localhost:11434/api/tags", timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            models = []
+            for model in data.get("models", []):
+                name = model.get("name", "")  # Keep full name with tag
+                if name and name not in models:
+                    models.append(name)
+            return sorted(models)
+    except requests.RequestException:
+        pass
+    return []
+
+
+def initialize_ollama_with_app(app_instance):
+    """Initialize Ollama server and update providers.json at startup."""
+    import logging
+    
+    try:
+        # Create a providers manager for this context
+        providers_json_path = os.environ.get(
+            "PROVIDERS_JSON_PATH", os.path.join(app_instance.root_path, "static", "providers.json")
+        )
+        providers_mgr = ProvidersConfigManager(providers_json_path)
+
+        # Load current providers data
+        data = providers_mgr.load_providers_json()
+        providers = data.get("providers", [])
+        
+        # Remove existing Ollama provider if present
+        providers = [p for p in providers if p.get("id") != "ollama"]
+        
+        # Check if Ollama is available and get models
+        if is_ollama_available():
+            # Try to start Ollama server if not running
+            if start_ollama_server():
+                # Get available models
+                models = get_ollama_models()
+                if models:
+                    # Add Ollama provider with current models
+                    ollama_provider = {
+                        "id": "ollama",
+                        "name": "Ollama (Local)", 
+                        "models": models
+                    }
+                    providers.append(ollama_provider)
+            # If startup fails, just skip Ollama - not an error worth logging
+        # If Ollama not available, just skip it - this is normal
+        
+        # Update providers data and save
+        data["providers"] = providers
+        providers_mgr.write_providers_json(data)
+            
+    except Exception as e:
+        # Only log errors during Ollama initialization
+        logging.getLogger(__name__).error(f"Error initializing Ollama: {e}")

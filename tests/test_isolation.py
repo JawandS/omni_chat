@@ -59,8 +59,11 @@ def test_providers_json_isolation(client):
 
 def test_api_key_operations_isolated(client):
     """Test that API key operations don't affect production .env file."""
-    # Store the original .env file modification time if it exists
-    project_env = Path.cwd() / ".env"
+    # Get the actual project root directory (parent of tests directory)
+    tests_dir = Path(__file__).parent
+    project_root = tests_dir.parent
+    project_env = project_root / ".env"
+    
     original_mtime = None
     if project_env.exists():
         original_mtime = project_env.stat().st_mtime
@@ -78,18 +81,18 @@ def test_api_key_operations_isolated(client):
 
 def test_no_real_api_calls():
     """Test that API client libraries are mocked to prevent real calls."""
-    import chat
+    import utils
     
     # Verify that the API key getter is mocked
-    openai_key = chat._get_api_key("openai")
-    gemini_key = chat._get_api_key("gemini") 
+    openai_key = utils.get_api_key("openai")
+    gemini_key = utils.get_api_key("gemini") 
     
     # Should return mock values, not real API keys
     assert openai_key == "PUT_API_KEY_HERE"
     assert gemini_key == "PUT_API_KEY_HERE"
     
     # Unknown providers should return empty
-    unknown_key = chat._get_api_key("unknown")
+    unknown_key = utils.get_api_key("unknown")
     assert unknown_key == ""
 
 

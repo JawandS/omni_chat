@@ -4,6 +4,7 @@ from datetime import datetime, UTC
 from typing import Optional, Union
 
 from flask import current_app, g, Flask
+from utils import get_timestamp
 
 
 def init_app(app: Flask) -> None:
@@ -126,18 +127,6 @@ def commit() -> None:
 # Data helpers ---------------------------------------------------------------
 
 
-def _get_timestamp(now: Optional[str] = None) -> str:
-    """Get current timestamp or provided timestamp.
-
-    Args:
-        now: Optional timestamp string. If None, current UTC time is used.
-
-    Returns:
-        ISO formatted timestamp string.
-    """
-    return now or datetime.now(UTC).isoformat()
-
-
 def create_chat(
     title: str, provider: str, model: str, now: Optional[str] = None
 ) -> int:
@@ -153,7 +142,7 @@ def create_chat(
         The ID of the created chat.
     """
     db = get_db()
-    ts = _get_timestamp(now)
+    ts = get_timestamp(now)
     cur = db.execute(
         "INSERT INTO chats (title, provider, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         (title, provider, model, ts, ts),
@@ -178,7 +167,7 @@ def update_chat_meta(
         model: New model name.
         now: Optional timestamp. If None, current time is used.
     """
-    ts = _get_timestamp(now)
+    ts = get_timestamp(now)
     get_db().execute(
         "UPDATE chats SET provider = ?, model = ?, updated_at = ? WHERE id = ?",
         (provider, model, ts, chat_id),
@@ -203,7 +192,7 @@ def update_chat(
         now: Optional timestamp. If None, current time is used.
     """
     db = get_db()
-    ts = _get_timestamp(now)
+    ts = get_timestamp(now)
 
     if title:
         db.execute(
@@ -241,7 +230,7 @@ def insert_message(
     if role not in ("user", "assistant"):
         raise ValueError(f"Invalid role: {role}. Must be 'user' or 'assistant'")
 
-    ts = _get_timestamp(now)
+    ts = get_timestamp(now)
     get_db().execute(
         "INSERT INTO messages (chat_id, role, content, provider, model, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         (chat_id, role, content, provider, model, ts),
@@ -255,7 +244,7 @@ def touch_chat(chat_id: int, now: Optional[str] = None) -> None:
         chat_id: The chat ID to update.
         now: Optional timestamp. If None, current time is used.
     """
-    ts = _get_timestamp(now)
+    ts = get_timestamp(now)
     get_db().execute("UPDATE chats SET updated_at = ? WHERE id = ?", (ts, chat_id))
 
 
@@ -368,7 +357,7 @@ def create_project(name: str, now: Optional[str] = None) -> int:
         The ID of the created project.
     """
     db = get_db()
-    ts = _get_timestamp(now)
+    ts = get_timestamp(now)
     cur = db.execute(
         "INSERT INTO projects (name, created_at, updated_at) VALUES (?, ?, ?)",
         (name, ts, ts),
@@ -438,7 +427,7 @@ def add_chat_to_project(chat_id: int, project_id: int, now: Optional[str] = None
         now: Optional timestamp. If None, current time is used.
     """
     db = get_db()
-    ts = _get_timestamp(now)
+    ts = get_timestamp(now)
     db.execute("UPDATE chats SET project_id = ?, updated_at = ? WHERE id = ?", (project_id, ts, chat_id))
     # Update project's updated_at timestamp
     db.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (ts, project_id))
@@ -452,7 +441,7 @@ def remove_chat_from_project(chat_id: int, now: Optional[str] = None) -> None:
         now: Optional timestamp. If None, current time is used.
     """
     db = get_db()
-    ts = _get_timestamp(now)
+    ts = get_timestamp(now)
     db.execute("UPDATE chats SET project_id = NULL, updated_at = ? WHERE id = ?", (ts, chat_id))
 
 

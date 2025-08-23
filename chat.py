@@ -11,6 +11,14 @@ try:
 except ImportError:  # pragma: no cover - optional dependency in tests
     load_dotenv = None  # type: ignore
 
+from utils import (
+    get_api_key,
+    is_ollama_available,
+    is_ollama_server_running,
+    start_ollama_server,
+    get_ollama_models,
+)
+
 # Load .env early so os.getenv picks up API keys
 if load_dotenv is not None:
     try:
@@ -49,115 +57,6 @@ class ChatReply:
     warning: Optional[str] = None
     error: Optional[str] = None
     missing_key_for: Optional[str] = None
-
-
-def _get_api_key(provider: str) -> str:
-    """Get API key for the specified provider.
-
-    Args:
-        provider: Provider name ('openai', 'gemini', or 'ollama').
-
-    Returns:
-        API key from environment or empty string if not found.
-    """
-    key_mapping = {
-        "openai": "OPENAI_API_KEY",
-        "gemini": "GEMINI_API_KEY",
-        "ollama": "",  # Ollama doesn't require API key for local usage
-    }
-    env_var = key_mapping.get(provider.lower(), "")
-    if not env_var:  # Ollama case
-        return "local"
-    return os.getenv(env_var, "")
-
-
-def is_ollama_available() -> bool:
-    """Check if Ollama is installed and available on the system.
-    
-    Returns:
-        True if ollama command is available, False otherwise.
-    """
-    try:
-        subprocess.run(["ollama", "--version"], capture_output=True, check=True, timeout=5)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-def is_ollama_server_running() -> bool:
-    """Check if Ollama server is running.
-    
-    Returns:
-        True if server is running, False otherwise.
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    if requests is None:
-        logger.warning("[OLLAMA] requests library not available for server check")
-        return False
-        
-    try:
-        logger.info("[OLLAMA] Checking if server is running at http://localhost:11434/api/tags")
-        response = requests.get("http://localhost:11434/api/tags", timeout=15)
-        
-        if response.status_code == 200:
-            logger.info("[OLLAMA] Server is running and responding")
-            return True
-        else:
-            logger.warning(f"[OLLAMA] Server responded with status {response.status_code}")
-            return False
-            
-    except requests.RequestException as e:
-        logger.warning(f"[OLLAMA] Server check failed: {type(e).__name__}: {e}")
-        return False
-
-
-def start_ollama_server() -> bool:
-    """Start Ollama server if it's not running.
-    
-    Returns:
-        True if server was started or already running, False on error.
-    """
-    if is_ollama_server_running():
-        return True
-        
-    if not is_ollama_available():
-        return False
-        
-    try:
-        # Start ollama serve in background
-        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # Wait a moment for server to start
-        time.sleep(2)
-        # Check if it's running now
-        return is_ollama_server_running()
-    except Exception:
-        return False
-
-
-def get_ollama_models() -> List[str]:
-    """Get list of available Ollama models.
-    
-    Returns:
-        List of model names, empty if Ollama is not available.
-    """
-    if requests is None or not is_ollama_server_running():
-        return []
-        
-    try:
-        response = requests.get("http://localhost:11434/api/tags", timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            models = []
-            for model in data.get("models", []):
-                name = model.get("name", "")  # Keep full name with tag
-                if name and name not in models:
-                    models.append(name)
-            return sorted(models)
-    except requests.RequestException:
-        pass
-    return []
 
 
 def _format_history_for_openai(
@@ -212,7 +111,7 @@ def _openai_call(
     Returns:
         The reply string or None on failure.
     """
-    key = _get_api_key("openai")
+    key = get_api_key("openai")
     if not key or key.startswith("PUT_") or OpenAI is None:
         return None
 
@@ -302,7 +201,7 @@ def _gemini_call(
     Returns:
         Reply content string or None on failure.
     """
-    key = _get_api_key("gemini")
+    key = get_api_key("gemini")
     if not key or key.startswith("PUT_") or genai is None:
         return None
 
@@ -523,7 +422,7 @@ def generate_reply(
             if content:
                 return ChatReply(reply=content)
             # Check for missing key/client
-            key = _get_api_key("openai")
+            key = get_api_key("openai")
             if not key or key.startswith("PUT_") or OpenAI is None:
                 return ChatReply(
                     reply="", error="OpenAI API key not set", missing_key_for="openai"
@@ -539,7 +438,7 @@ def generate_reply(
             content = _gemini_call(model, history, message, params=params)
             if content:
                 return ChatReply(reply=content)
-            key = _get_api_key("gemini")
+            key = get_api_key("gemini")
             if not key or key.startswith("PUT_") or genai is None:
                 return ChatReply(
                     reply="", error="Gemini API key not set", missing_key_for="gemini"

@@ -76,7 +76,9 @@ def _force_test_isolation(monkeypatch, tmp_path):
         """Mock API key getter that never returns real keys."""
         return "PUT_API_KEY_HERE" if provider.lower() in ["openai", "gemini"] else ""
 
-    monkeypatch.setattr(chat_mod, "_get_api_key", mock_get_api_key)
+    # Import utils module and patch the get_api_key function there
+    import utils as utils_mod
+    monkeypatch.setattr(utils_mod, "get_api_key", mock_get_api_key)
 
     # Disable the actual client libraries to prevent any real API calls
     try:

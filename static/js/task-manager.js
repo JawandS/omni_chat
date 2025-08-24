@@ -430,8 +430,6 @@ class TaskManager {
     }
 
     async deleteTask(taskId) {
-        if (!confirm('Are you sure you want to delete this task?')) return;
-        
         try {
             const response = await fetch(`/api/tasks/${taskId}`, {
                 method: 'DELETE'

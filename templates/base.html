@@ -338,7 +338,7 @@
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block text-sm text-white/70 mb-1">SMTP Server</label>
-                <input id="email-smtp-server" type="text" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="smtp.gmail.com" />
+                <input id="email-smtp-server" type="text" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="smtp.gmail.com" value="smtp.gmail.com" />
               </div>
               <div>
                 <label class="block text-sm text-white/70 mb-1">Port</label>
@@ -346,14 +346,9 @@
               </div>
             </div>
             <div>
-              <label class="block text-sm text-white/70 mb-1">From Email Address</label>
-              <input id="email-from" type="email" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="your-email@gmail.com" />
-              <p class="text-xs text-white/50 mt-1">The email address that appears as sender</p>
-            </div>
-            <div>
-              <label class="block text-sm text-white/70 mb-1">SMTP Username</label>
-              <input id="email-username" type="text" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="your-email@gmail.com" />
-              <p class="text-xs text-white/50 mt-1">Usually the same as your email address</p>
+              <label class="block text-sm text-white/70 mb-1">Email Address</label>
+              <input id="email-address" type="email" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="your-email@gmail.com" />
+              <p class="text-xs text-white/50 mt-1">Used for both authentication and as the sender address</p>
             </div>
             <div>
               <label class="block text-sm text-white/70 mb-1">Password / App Password</label>
@@ -441,8 +436,7 @@
   // Email elements
   const emailSmtpServer = document.getElementById('email-smtp-server');
   const emailSmtpPort = document.getElementById('email-smtp-port');
-  const emailFrom = document.getElementById('email-from');
-  const emailUsername = document.getElementById('email-username');
+  const emailAddress = document.getElementById('email-address');
   const emailPassword = document.getElementById('email-password');
   const emailUseTls = document.getElementById('email-use-tls');
   const saveEmailBtn = document.getElementById('save-email');
@@ -501,10 +495,9 @@
       const r = await fetch('/api/email/config');
       if (!r.ok) return;
       const data = await r.json();
-      emailSmtpServer.value = data.smtp_server || '';
+      emailSmtpServer.value = data.smtp_server || 'smtp.gmail.com';
       emailSmtpPort.value = data.smtp_port || '587';
-      emailFrom.value = data.from_email || '';
-      emailUsername.value = data.smtp_username || '';
+      emailAddress.value = data.email_address || '';
       emailPassword.value = data.smtp_password === '***' ? '' : (data.smtp_password || '');
       emailUseTls.checked = data.smtp_use_tls !== 'false';
     } catch (_) {}
@@ -514,8 +507,7 @@
     const config = {
       smtp_server: emailSmtpServer.value.trim(),
       smtp_port: emailSmtpPort.value.trim(),
-      from_email: emailFrom.value.trim(),
-      smtp_username: emailUsername.value.trim(),
+      email_address: emailAddress.value.trim(),
       smtp_password: emailPassword.value.trim(),
       smtp_use_tls: emailUseTls.checked ? 'true' : 'false'
     };

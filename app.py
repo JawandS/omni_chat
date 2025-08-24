@@ -416,10 +416,9 @@ def create_app() -> Flask:
             {
                 "smtp_server": str,
                 "smtp_port": str,
-                "smtp_username": str,
+                "email_address": str,
                 "smtp_password": str,
-                "smtp_use_tls": str,
-                "from_email": str
+                "smtp_use_tls": str
             }
 
         Returns:
@@ -430,9 +429,8 @@ def create_app() -> Flask:
         # Validate required fields
         required_fields = [
             "smtp_server",
-            "smtp_username",
+            "email_address",
             "smtp_password",
-            "from_email",
         ]
         missing_fields = [
             field for field in required_fields if not data.get(field, "").strip()
@@ -447,9 +445,9 @@ def create_app() -> Flask:
             )
 
         # Validate email format (basic check)
-        from_email = data.get("from_email", "").strip()
-        if "@" not in from_email or "." not in from_email:
-            return jsonify({"error": "Invalid from_email format"}), 400
+        email_address = data.get("email_address", "").strip()
+        if "@" not in email_address or "." not in email_address:
+            return jsonify({"error": "Invalid email_address format"}), 400
 
         # Validate port number
         try:

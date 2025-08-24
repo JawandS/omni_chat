@@ -34,10 +34,9 @@ Usage:
     >>> config = {
     ...     'smtp_server': 'smtp.gmail.com',
     ...     'smtp_port': '587',
-    ...     'smtp_username': 'user@gmail.com',
+    ...     'email_address': 'user@gmail.com',
     ...     'smtp_password': 'app_password',
-    ...     'smtp_use_tls': 'true',
-    ...     'from_email': 'user@gmail.com'
+    ...     'smtp_use_tls': 'true'
     ... }
     >>> send_task_email("recipient@example.com", "Task Result", "Content", config)
 """
@@ -64,10 +63,9 @@ class EmailService:
         """
         self.smtp_server = email_config.get("smtp_server", "")
         self.smtp_port = int(email_config.get("smtp_port", 587))
-        self.smtp_username = email_config.get("smtp_username", "")
+        self.email_address = email_config.get("email_address", "")
         self.smtp_password = email_config.get("smtp_password", "")
         self.smtp_use_tls = email_config.get("smtp_use_tls", "true").lower() == "true"
-        self.from_email = email_config.get("from_email", "")
 
     def is_configured(self) -> bool:
         """Check if email service is properly configured.
@@ -77,9 +75,8 @@ class EmailService:
         """
         required_fields = [
             self.smtp_server,
-            self.smtp_username,
+            self.email_address,
             self.smtp_password,
-            self.from_email,
         ]
         return all(field.strip() for field in required_fields)
 
@@ -134,7 +131,7 @@ class EmailService:
             # Create email message
             message = MIMEMultipart("alternative")
             message["Subject"] = f"{task_name} - {subject_timestamp}"
-            message["From"] = self.from_email
+            message["From"] = self.email_address
             message["To"] = to_email
 
             # Create email content
@@ -270,10 +267,10 @@ This email was sent automatically by Omni Chat task scheduler.
             if self.smtp_use_tls:
                 server.starttls(context=context)
 
-            if self.smtp_username and self.smtp_password:
-                server.login(self.smtp_username, self.smtp_password)
+            if self.email_address and self.smtp_password:
+                server.login(self.email_address, self.smtp_password)
 
-            server.sendmail(self.from_email, to_email, message.as_string())
+            server.sendmail(self.email_address, to_email, message.as_string())
 
 
 def send_task_email(

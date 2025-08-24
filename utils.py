@@ -194,18 +194,15 @@ class EnvironmentManager:
         values = dotenv_values(self.env_path)
 
         return {
-            "smtp_server": values.get("SMTP_SERVER") or os.getenv("SMTP_SERVER") or "",
+            "smtp_server": values.get("SMTP_SERVER") or os.getenv("SMTP_SERVER") or "smtp.gmail.com",
             "smtp_port": values.get("SMTP_PORT") or os.getenv("SMTP_PORT") or "587",
-            "smtp_username": values.get("SMTP_USERNAME")
-            or os.getenv("SMTP_USERNAME")
-            or "",
+            "email_address": values.get("EMAIL_ADDRESS") or os.getenv("EMAIL_ADDRESS") or "",
             "smtp_password": values.get("SMTP_PASSWORD")
             or os.getenv("SMTP_PASSWORD")
             or "",
             "smtp_use_tls": values.get("SMTP_USE_TLS")
             or os.getenv("SMTP_USE_TLS")
             or "true",
-            "from_email": values.get("FROM_EMAIL") or os.getenv("FROM_EMAIL") or "",
         }
 
     def update_email_config(
@@ -225,10 +222,9 @@ class EnvironmentManager:
         key_mapping = [
             ("SMTP_SERVER", "smtp_server"),
             ("SMTP_PORT", "smtp_port"),
-            ("SMTP_USERNAME", "smtp_username"),
+            ("EMAIL_ADDRESS", "email_address"),
             ("SMTP_PASSWORD", "smtp_password"),
             ("SMTP_USE_TLS", "smtp_use_tls"),
-            ("FROM_EMAIL", "from_email"),
         ]
 
         for env_key, body_key in key_mapping:

@@ -1,8 +1,8 @@
 """Tests for favorites and d    # Remove favorite
-    rem = client.delete("/api/favorites?provider=openai&model=gpt-4o")
-    assert rem.status_code == 200
-    favs3 = rem.get_json()["favorites"]
-    assert "openai:gpt-4o" not in favs3t model provider configuration endpoints."""
+rem = client.delete("/api/favorites?provider=openai&model=gpt-4o")
+assert rem.status_code == 200
+favs3 = rem.get_json()["favorites"]
+assert "openai:gpt-4o" not in favs3t model provider configuration endpoints."""
 
 import json
 from pathlib import Path
@@ -54,12 +54,17 @@ def test_remove_favorite_missing_params(client):
 
 
 def test_add_favorite_unknown_model(client):
-    r = client.post("/api/favorites", json={"provider": "openai", "model": "no-such-model"})
+    r = client.post(
+        "/api/favorites", json={"provider": "openai", "model": "no-such-model"}
+    )
     assert r.status_code == 400
     assert r.get_json()["error"] == "unknown provider/model"
 
+
 def test_set_default_model_invalid(client):
-    r = client.put("/api/default-model", json={"provider": "openai", "model": "does-not-exist"})
+    r = client.put(
+        "/api/default-model", json={"provider": "openai", "model": "does-not-exist"}
+    )
     assert r.status_code == 400
     assert r.get_json()["error"] == "unknown provider/model"
 

@@ -1,4 +1,44 @@
-"""Shared utility functions for the Omni Chat application."""
+"""
+Shared utility functions for the Omni Chat application.
+
+This module provides common utilities and helper functions used throughout the
+application. It handles configuration management, validation, and reusable
+business logic that doesn't belong to specific modules.
+
+Key Components:
+    - Request validation functions for API endpoints
+    - Environment and configuration management classes
+    - Provider configuration handling
+    - Chat management utilities
+    - Timestamp and formatting helpers
+
+Classes:
+    - EnvironmentManager: Handles .env file operations and API key management
+    - ProvidersConfigManager: Manages provider configuration and model settings
+
+Functions:
+    - validate_chat_request(): Validates incoming chat API requests
+    - generate_chat_title(): Creates meaningful chat titles from messages
+    - create_or_update_chat(): Handles chat creation and updates
+    - get_timestamp(): Provides consistent UTC timestamp formatting
+
+Architecture:
+    - Centralized configuration management
+    - Type-safe validation with clear error messages
+    - Environment isolation for testing
+    - Provider-agnostic configuration handling
+
+Usage:
+    >>> env_mgr = EnvironmentManager("/path/to/.env")
+    >>> keys = env_mgr.get_api_keys()
+    >>> message, provider, model = validate_chat_request(request_data)
+
+Security:
+    - Safe environment variable handling
+    - Input validation with detailed error messages
+    - Secure API key storage and retrieval
+    - Test isolation with temporary configuration files
+"""
 
 import json
 import os
@@ -36,40 +76,40 @@ def validate_chat_request(data: dict) -> tuple[str, str, str]:
 
 def generate_chat_title(message: str, existing_title: str = "") -> str:
     """Generate a default title for a chat based on the message.
-    
+
     Args:
         message: The chat message to generate title from.
         existing_title: Existing title if any.
-        
+
     Returns:
         Generated title string.
     """
     if existing_title.strip():
         return existing_title.strip()
-    
+
     if not message:
         return "New chat"
-        
+
     return (message[:48] + "…") if len(message) > 49 else message
 
 
 class EnvironmentManager:
     """Manages environment variables and .env file operations."""
-    
+
     def __init__(self, env_path: str):
         self.env_path = env_path
-    
+
     def get_env_path(self) -> str:
         """Get the path to the .env file for environment variable storage."""
         return self.env_path
-    
+
     def load_env_into_process(self) -> None:
         """Ensure process environment reflects file updates."""
         load_dotenv(self.env_path, override=True)
-    
+
     def get_api_keys(self) -> Dict[str, str]:
         """Get current API keys for all providers.
-        
+
         Returns:
             Dictionary with provider names as keys and API keys as values.
         """
@@ -83,16 +123,16 @@ class EnvironmentManager:
         gemini_key = gemini_key or os.getenv("GEMINI_API_KEY", "")
 
         return {
-            "openai": openai_key,
-            "gemini": gemini_key,
+            "openai": openai_key or "",
+            "gemini": gemini_key or "",
         }
-    
+
     def update_api_keys(self, keys_data: Dict[str, Any]) -> Dict[str, Optional[str]]:
         """Set or update API keys for providers.
-        
+
         Args:
             keys_data: Dictionary with provider keys to update.
-            
+
         Returns:
             Dictionary of updated keys.
         """
@@ -120,13 +160,13 @@ class EnvironmentManager:
 
         self.load_env_into_process()
         return updated
-    
+
     def delete_api_key(self, provider: str) -> bool:
         """Delete API key for a specific provider.
-        
+
         Args:
             provider: Provider name ('openai' or 'gemini').
-            
+
         Returns:
             True if successful, False if provider is unknown.
         """
@@ -147,27 +187,35 @@ class EnvironmentManager:
 
     def get_email_config(self) -> Dict[str, str]:
         """Get current email configuration.
-        
+
         Returns:
             Dictionary with email configuration values.
         """
         values = dotenv_values(self.env_path)
-        
+
         return {
-            "smtp_server": values.get("SMTP_SERVER") or os.getenv("SMTP_SERVER", ""),
-            "smtp_port": values.get("SMTP_PORT") or os.getenv("SMTP_PORT", "587"),
-            "smtp_username": values.get("SMTP_USERNAME") or os.getenv("SMTP_USERNAME", ""),
-            "smtp_password": values.get("SMTP_PASSWORD") or os.getenv("SMTP_PASSWORD", ""),
-            "smtp_use_tls": values.get("SMTP_USE_TLS") or os.getenv("SMTP_USE_TLS", "true"),
-            "from_email": values.get("FROM_EMAIL") or os.getenv("FROM_EMAIL", "")
+            "smtp_server": values.get("SMTP_SERVER") or os.getenv("SMTP_SERVER") or "",
+            "smtp_port": values.get("SMTP_PORT") or os.getenv("SMTP_PORT") or "587",
+            "smtp_username": values.get("SMTP_USERNAME")
+            or os.getenv("SMTP_USERNAME")
+            or "",
+            "smtp_password": values.get("SMTP_PASSWORD")
+            or os.getenv("SMTP_PASSWORD")
+            or "",
+            "smtp_use_tls": values.get("SMTP_USE_TLS")
+            or os.getenv("SMTP_USE_TLS")
+            or "true",
+            "from_email": values.get("FROM_EMAIL") or os.getenv("FROM_EMAIL") or "",
         }
-    
-    def update_email_config(self, email_data: Dict[str, Any]) -> Dict[str, Optional[str]]:
+
+    def update_email_config(
+        self, email_data: Dict[str, Any]
+    ) -> Dict[str, Optional[str]]:
         """Set or update email configuration.
-        
+
         Args:
             email_data: Dictionary with email config to update.
-            
+
         Returns:
             Dictionary of updated email config.
         """
@@ -176,11 +224,11 @@ class EnvironmentManager:
         updated: Dict[str, Optional[str]] = {}
         key_mapping = [
             ("SMTP_SERVER", "smtp_server"),
-            ("SMTP_PORT", "smtp_port"), 
+            ("SMTP_PORT", "smtp_port"),
             ("SMTP_USERNAME", "smtp_username"),
             ("SMTP_PASSWORD", "smtp_password"),
             ("SMTP_USE_TLS", "smtp_use_tls"),
-            ("FROM_EMAIL", "from_email")
+            ("FROM_EMAIL", "from_email"),
         ]
 
         for env_key, body_key in key_mapping:
@@ -206,16 +254,16 @@ class EnvironmentManager:
 
 class ProvidersConfigManager:
     """Manages provider configuration JSON file operations."""
-    
+
     def __init__(self, providers_json_path: str):
         self.providers_json_path = providers_json_path
-    
+
     def load_providers_json(self) -> dict:
         """Load providers configuration from JSON file.
-        
+
         Returns:
             Dictionary containing providers configuration.
-            
+
         Raises:
             FileNotFoundError: If neither providers.json nor template exists.
             Exception: If there's an error loading the file.
@@ -243,10 +291,10 @@ class ProvidersConfigManager:
                 raise Exception(f"Error loading template file {template_path}: {e}")
         except Exception as e:
             raise Exception(f"Error loading providers.json: {e}")
-    
+
     def write_providers_json(self, data: dict) -> None:
         """Write providers configuration to JSON file.
-        
+
         Args:
             data: Configuration data to write.
         """
@@ -255,14 +303,14 @@ class ProvidersConfigManager:
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
         os.replace(tmp_path, self.providers_json_path)
-    
+
     def validate_provider_model(self, provider: str, model: str) -> bool:
         """Validate that a provider and model combination is valid.
-        
+
         Args:
             provider: Provider ID to validate.
             model: Model name to validate.
-            
+
         Returns:
             True if valid, False otherwise.
         """
@@ -278,10 +326,10 @@ class ProvidersConfigManager:
 
 def escape_html(text: str) -> str:
     """Escape HTML special characters in text.
-    
+
     Args:
         text: Text to escape.
-        
+
     Returns:
         HTML-escaped text.
     """
@@ -296,51 +344,53 @@ def escape_html(text: str) -> str:
 
 def truncate_text(text: str, max_length: int = 50, suffix: str = "…") -> str:
     """Truncate text to a maximum length with optional suffix.
-    
+
     Args:
         text: Text to truncate.
         max_length: Maximum length before truncation.
         suffix: Suffix to add when truncating.
-        
+
     Returns:
         Truncated text.
     """
     if len(text) <= max_length:
         return text
-    return text[:max_length - len(suffix)] + suffix
+    return text[: max_length - len(suffix)] + suffix
 
 
 def format_timestamp(timestamp: str) -> str:
     """Format ISO timestamp for display.
-    
+
     Args:
         timestamp: ISO format timestamp string.
-        
+
     Returns:
         Formatted timestamp string.
     """
     try:
         from datetime import datetime
-        dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        return dt.strftime('%Y-%m-%d %H:%M')
+
+        dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return timestamp
 
 
 def sanitize_filename(filename: str) -> str:
     """Sanitize a filename for safe filesystem usage.
-    
+
     Args:
         filename: Original filename.
-        
+
     Returns:
         Sanitized filename.
     """
     import re
+
     # Remove or replace unsafe characters
-    filename = re.sub(r'[<>:"/\\|?*]', '_', filename)
+    filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
     # Remove control characters
-    filename = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', filename)
+    filename = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", filename)
     # Limit length
     return filename[:255]
 
@@ -356,6 +406,7 @@ def get_timestamp(now: Optional[str] = None) -> str:
         ISO formatted timestamp string.
     """
     from datetime import datetime, UTC
+
     return now or datetime.now(UTC).isoformat()
 
 
@@ -395,7 +446,7 @@ def create_or_update_chat(
         Chat ID (new or existing).
     """
     from database import create_chat, update_chat_meta
-    
+
     if not chat_id:
         chat_id = create_chat(title, provider, model, now)
     else:
@@ -406,44 +457,56 @@ def create_or_update_chat(
 # Ollama utilities
 def is_ollama_available() -> bool:
     """Check if Ollama is installed and available on the system.
-    
+
     Returns:
         True if ollama command is available, False otherwise.
     """
     import subprocess
+
     try:
-        subprocess.run(["ollama", "--version"], capture_output=True, check=True, timeout=5)
+        subprocess.run(
+            ["ollama", "--version"], capture_output=True, check=True, timeout=5
+        )
         return True
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+    except (
+        subprocess.CalledProcessError,
+        FileNotFoundError,
+        subprocess.TimeoutExpired,
+    ):
         return False
 
 
 def is_ollama_server_running() -> bool:
     """Check if Ollama server is running.
-    
+
     Returns:
         True if server is running, False otherwise.
     """
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     try:
         import requests
     except ImportError:
         logger.warning("[OLLAMA] requests library not available for server check")
         return False
-        
+
     try:
-        logger.info("[OLLAMA] Checking if server is running at http://localhost:11434/api/tags")
+        logger.info(
+            "[OLLAMA] Checking if server is running at http://localhost:11434/api/tags"
+        )
         response = requests.get("http://localhost:11434/api/tags", timeout=15)
-        
+
         if response.status_code == 200:
             logger.info("[OLLAMA] Server is running and responding")
             return True
         else:
-            logger.warning(f"[OLLAMA] Server responded with status {response.status_code}")
+            logger.warning(
+                f"[OLLAMA] Server responded with status {response.status_code}"
+            )
             return False
-            
+
     except requests.RequestException as e:
         logger.warning(f"[OLLAMA] Server check failed: {type(e).__name__}: {e}")
         return False
@@ -451,22 +514,24 @@ def is_ollama_server_running() -> bool:
 
 def start_ollama_server() -> bool:
     """Start Ollama server if it's not running.
-    
+
     Returns:
         True if server was started or already running, False on error.
     """
     import subprocess
     import time
-    
+
     if is_ollama_server_running():
         return True
-        
+
     if not is_ollama_available():
         return False
-        
+
     try:
         # Start ollama serve in background
-        subprocess.Popen(["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            ["ollama", "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
         # Wait a moment for server to start
         time.sleep(2)
         # Check if it's running now
@@ -477,7 +542,7 @@ def start_ollama_server() -> bool:
 
 def get_ollama_models() -> list:
     """Get list of available Ollama models.
-    
+
     Returns:
         List of model names, empty if Ollama is not available.
     """
@@ -485,10 +550,10 @@ def get_ollama_models() -> list:
         import requests
     except ImportError:
         return []
-        
+
     if not is_ollama_server_running():
         return []
-        
+
     try:
         response = requests.get("http://localhost:11434/api/tags", timeout=10)
         if response.status_code == 200:
@@ -507,21 +572,22 @@ def get_ollama_models() -> list:
 def initialize_ollama_with_app(app_instance):
     """Initialize Ollama server and update providers.json at startup."""
     import logging
-    
+
     try:
         # Create a providers manager for this context
         providers_json_path = os.environ.get(
-            "PROVIDERS_JSON_PATH", os.path.join(app_instance.root_path, "static", "providers.json")
+            "PROVIDERS_JSON_PATH",
+            os.path.join(app_instance.root_path, "static", "providers.json"),
         )
         providers_mgr = ProvidersConfigManager(providers_json_path)
 
         # Load current providers data
         data = providers_mgr.load_providers_json()
         providers = data.get("providers", [])
-        
+
         # Remove existing Ollama provider if present
         providers = [p for p in providers if p.get("id") != "ollama"]
-        
+
         # Check if Ollama is available and get models
         if is_ollama_available():
             # Try to start Ollama server if not running
@@ -532,17 +598,17 @@ def initialize_ollama_with_app(app_instance):
                     # Add Ollama provider with current models
                     ollama_provider = {
                         "id": "ollama",
-                        "name": "Ollama (Local)", 
-                        "models": models
+                        "name": "Ollama (Local)",
+                        "models": models,
                     }
                     providers.append(ollama_provider)
             # If startup fails, just skip Ollama - not an error worth logging
         # If Ollama not available, just skip it - this is normal
-        
+
         # Update providers data and save
         data["providers"] = providers
         providers_mgr.write_providers_json(data)
-            
+
     except Exception as e:
         # Only log errors during Ollama initialization
         logging.getLogger(__name__).error(f"Error initializing Ollama: {e}")

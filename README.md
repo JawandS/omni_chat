@@ -1,125 +1,348 @@
 # Omni Chat
 
-A simple and lightweight chat interface with a model selector you control (uses API calls). Lets you switch models / providers mid chat. Meant to run locally, uses SQLite to store history. 
+A lightweight, locally-hosted web chat interface that provides a unified way to interact with multiple AI providers. Switch between OpenAI, Google Gemini, and Ollama models mid-conversation while maintaining your chat history in a local SQLite database.
 
-## Quick start
+## ✨ Features
 
-Prereqs: Python 3.10+
+- **Multi-Provider Support**: OpenAI (GPT-4o, GPT-5, o3-mini), Google Gemini, and Ollama
+- **Model Switching**: Change AI providers and models within the same conversation
+- **Local Storage**: All chats stored locally in SQLite - your data stays private
+- **Project Organization**: Group related chats into projects for better organization
+- **Task Scheduling**: Schedule recurring AI tasks with email notifications
+- **Email Integration**: Send task results via email with SMTP support
+- **Responsive UI**: Clean, modern interface that works on desktop and mobile
+- **Real-time Streaming**: Live response streaming for supported models
+- **Web Search**: GPT-4.1 Live with real-time web search capabilities
+- **Favorites System**: Quick access to your preferred model configurations
 
+## 🚀 Quick Start
+
+### Prerequisites
+- Python 3.10+ (tested on Python 3.12)
+- Git (for installation)
+
+### Installation
+
+1. **Clone and navigate to the project**
 ```bash
-# 1) (optional) create a virtual environment
-python -m venv .venv
-source .venv/bin/activate
+git clone <repository-url>
+cd omni_chat
+```
 
-# 2) install dependencies
+2. **Create a virtual environment**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+3. **Install dependencies**
+```bash
+# For basic usage
 pip install -r requirements.txt
 
-# 3) run the app
-python app.py
-# open http://127.0.0.1:5000
-
-# 4) configure API key (settings icon or .env file)
-OPENAI_API_KEY=sk-...your-openai-key...
-GEMINI_API_KEY=...your-gemini-key...
+# For development (includes testing, linting, type checking)
+pip install -r requirements-dev.txt
 ```
 
-## Email Setup (Optional)
-
-The application supports sending task results via email. To configure email functionality:
-
-### 1. Configure SMTP Settings
-
-Click the settings icon (⚙️) in the application and go to the **Email** tab, or add the following to your `.env` file:
-
+4. **Start the application**
 ```bash
-# Email Configuration
+python app.py
+```
+
+5. **Open your browser**
+Navigate to `http://127.0.0.1:5000`
+
+6. **Configure API keys**
+Click the settings icon (⚙️) and add your API keys, or create a `.env` file:
+```bash
+OPENAI_API_KEY=sk-your-openai-key-here
+GEMINI_API_KEY=your-gemini-api-key-here
+```
+
+That's it! You can now start chatting with AI models.
+
+## 🔧 Configuration
+
+### API Keys
+
+**Option 1: Via Web Interface**
+- Click the settings icon (⚙️) in the top-right corner
+- Switch to the "API Keys" tab
+- Enter your keys and save
+
+**Option 2: Via Environment File**
+Create a `.env` file in the project root:
+```env
+OPENAI_API_KEY=sk-your-openai-key-here
+GEMINI_API_KEY=your-gemini-api-key-here
+```
+
+### Email Setup (Optional)
+
+Configure email for task notifications:
+
+1. **Via Web Interface**: Settings → Email tab
+2. **Via Environment File**:
+```env
 SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USERNAME=your-email@gmail.com    # Usually same as FROM_EMAIL
+SMTP_USERNAME=your-email@gmail.com
 SMTP_PASSWORD=your-app-password
 SMTP_USE_TLS=true
-FROM_EMAIL=your-email@gmail.com       # Usually same as SMTP_USERNAME
+FROM_EMAIL=your-email@gmail.com
 ```
 
-**Note:** For most email providers (Gmail, Yahoo, Outlook), `SMTP_USERNAME` and `FROM_EMAIL` are the same - your email address. They're separate fields to support corporate email servers where authentication username might differ from the sending address.
+**Gmail Setup**:
+1. Enable 2-Factor Authentication
+2. Generate an App Password at [Google App Passwords](https://myaccount.google.com/apppasswords)
+3. Use the App Password in `SMTP_PASSWORD`
 
-### 2. Gmail Setup (Recommended)
+## 📖 User Guide
 
-For Gmail, you'll need to use an App Password instead of your regular password:
+### Basic Usage
 
-1. Enable 2-Factor Authentication on your Google account
-2. Go to [Google App Passwords](https://myaccount.google.com/apppasswords)
-3. Generate a new App Password for "Mail"
-4. Use this App Password in the `SMTP_PASSWORD` field
+1. **Start a Chat**: Click "New Chat" or just start typing
+2. **Switch Models**: Use the provider and model dropdowns at the top
+3. **Organize Chats**: Create projects to group related conversations
+4. **Schedule Tasks**: Use the "Schedule" page for recurring AI tasks
+5. **Manage Settings**: Click the settings icon for configuration
 
-### 3. Other Email Providers
+### Advanced Features
 
-Common SMTP settings for other providers:
+**Project Management**:
+- Create projects to organize related chats
+- Assign chats to projects for better organization
+- Delete projects (chats remain but become unassigned)
 
-**Outlook/Hotmail:**
-- SMTP Server: `smtp-mail.outlook.com`
-- Port: `587`
-- TLS: `true`
+**Task Scheduling**:
+- Schedule AI tasks to run automatically
+- Choose output destination: application or email
+- Set frequency: one-time, daily, weekly, monthly, yearly
 
-**Yahoo:**
-- SMTP Server: `smtp.mail.yahoo.com`
-- Port: `587` or `465`
-- TLS: `true`
+**Model Configurations**:
+- Save favorite model configurations for quick access
+- Adjust model parameters like temperature, max tokens
+- Provider-specific settings (reasoning effort for o3-mini, etc.)
 
-### 4. Test Your Configuration
+### Supported Providers
 
-After configuring SMTP settings:
-1. Go to Settings → Email tab
-2. Enter a test email address
-3. Click "Test" to verify your configuration
-4. You should receive a test email if everything is set up correctly
+**OpenAI**:
+- GPT-4o, GPT-5, GPT-5-mini, GPT-5-nano
+- GPT-4.1 (with web search), GPT-4.1-mini, GPT-4.1-nano
+- o3, o3-pro, o3-mini (reasoning models)
+- Legacy models: GPT-4, GPT-3.5-turbo
 
-### 5. Using Email in Tasks
+**Google Gemini**:
+- Gemini-2.5-flash, Gemini-2.0-flash
+- Gemini-1.5-pro, Gemini-1.5-flash
 
-When creating scheduled tasks:
-1. Set "Output Destination" to "Email"
-2. Enter the recipient email address
-3. When the task executes, results will be sent to the specified email
-4. Email subject format: `{task_name} - {timestamp}`
+**Ollama** (Local models):
+- Any model available in your local Ollama installation
+- Automatic detection and configuration
 
-## Provider and model support
-- Currently supporting OpenAI/Gemini/Ollama
-- **GPT-4.1 Live**: Special OpenAI model with real-time web search capabilities
-  - Automatically searches the web for current information
-  - Includes source citations
-  - Perfect for queries requiring up-to-date data, news, or recent events
-  - Uses OpenAI's Responses API for enhanced functionality
-- You can update `static/providers.json` for other models (might need to customize `chat.py` for different API calls)
+## 🛠️ Development
 
-# Dev
-## Structure
-- `app.py`: main file with routes
-- `chat.py`: call various APIs
-- `database.py`: integrate with SQLite
+### For Contributors
 
-## Run tests
+**Setup Development Environment**:
+```bash
+# Clone repository
+git clone <repository-url>
+cd omni_chat
+
+# Setup virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install development dependencies
+pip install -r requirements-dev.txt
+
+# Run tests
+pytest -q
+
+# Check code quality
+black --check .
+mypy . --ignore-missing-imports
+```
+
+**Project Structure**:
+```
+omni_chat/
+├── app.py              # Main Flask application and routes
+├── chat.py             # AI provider integrations
+├── database.py         # SQLite database operations  
+├── utils.py            # Shared utilities and configuration
+├── email_service.py    # Email functionality
+├── static/             # Frontend assets and configuration
+├── templates/          # HTML templates and fragments
+├── tests/              # Comprehensive test suite
+└── docs/               # Documentation
+```
+
+**Key Development Commands**:
+```bash
+# Run application
+python app.py
+
+# Run tests (safe - no production impact)
+pytest -q
+
+# Format code
+black .
+
+# Type checking
+mypy . --ignore-missing-imports
+
+# Run with coverage
+pytest --cov=. --cov-report=html
+```
+
+### Architecture
+
+The application follows a modular, layered architecture:
+
+- **Web Layer** (`app.py`): Flask routes and request handling
+- **Logic Layer** (`chat.py`): AI provider abstractions and business logic
+- **Data Layer** (`database.py`): SQLite operations and persistence
+- **Utilities** (`utils.py`): Shared functions and configuration management
+- **Frontend**: HTML templates with vanilla JavaScript for interactivity
+
+**Design Patterns**:
+- Application Factory (Flask)
+- Provider Adapter (AI services)
+- Data Access Object (Database)
+- Configuration Manager (Environment)
+
+See `docs/ARCHITECTURE.md` for detailed architecture documentation.
+
+### Testing
+
+The application includes a comprehensive test suite with complete isolation:
 
 ```bash
-pytest -q
+# Run all tests
+pytest
+
+# Run specific test category  
+pytest tests/test_app.py      # API endpoint tests
+pytest tests/test_chat.py     # Provider integration tests
+pytest tests/test_database.py # Database operation tests
+
+# Run with verbose output
+pytest -v
+
+# Generate coverage report
+pytest --cov=. --cov-report=html
 ```
 
-Notes:
-- Tests use a temp SQLite DB and monkeypatch provider calls – no real network calls.
-- The main DB lives at `instance/omni_chat.db` (created on first run).
+**Test Safety Features**:
+- ✅ Complete isolation from production data
+- ✅ No real API calls (all mocked)
+- ✅ Temporary databases and config files
+- ✅ Automatic cleanup after each test
+- ✅ Can run offline without external dependencies
 
-## Troubleshooting
+See `docs/TEST_SAFETY.md` for comprehensive test safety documentation.
 
-- Missing API key: The message shows an inline error and may auto‑open Settings. Add your key and retry.
-- OpenAI reasoning models (o3*): Make sure your account has access; if calls fail, try a standard model to validate setup.
-- Reset the database: Stop the app and delete `instance/omni_chat.db` (you’ll lose chats).
+## 🔒 Security & Privacy
 
-## License
+- **Local Storage**: All chat data stored locally in SQLite
+- **API Keys**: Stored in environment variables, never in source code
+- **No Telemetry**: No data collection or external tracking
+- **Input Validation**: All user inputs validated and sanitized
+- **Test Isolation**: Tests never affect production data or make real API calls
 
-MIT License. See `LICENSE.md` if present; otherwise the project is intended to be used under the MIT terms.
+## 📊 System Requirements
 
-## Contributing
+**Minimum**:
+- Python 3.10+
+- 100MB disk space
+- 512MB RAM
 
-Contributions are welcome! Feel free to open issues or pull requests for bugs, features, or docs. Please run the test suite (`pytest -q`) before submitting and update as needed.
+**Recommended**:
+- Python 3.12
+- 1GB disk space (for chat history)
+- 1GB RAM
+- SSD storage for better performance
 
-## AI
-Developed with the help of GitHub Copilot (GPT-5)
+## 🐛 Troubleshooting
+
+**Common Issues**:
+
+1. **Missing API Key Error**
+   - Add your API key via Settings or `.env` file
+   - Ensure the key is valid and has sufficient credits
+
+2. **Import/Module Errors**
+   - Activate virtual environment: `source .venv/bin/activate`
+   - Reinstall dependencies: `pip install -r requirements.txt`
+
+3. **Database Locked**
+   - Check for running Python processes: `ps aux | grep python`
+   - Restart the application
+
+4. **Tests Failing**
+   - Ensure virtual environment is activated
+   - Run `pip install -r requirements-dev.txt`
+   - Check that production database is not being modified during tests
+
+**Reset Application**:
+```bash
+# Reset chat history (WARNING: deletes all chats)
+rm instance/omni_chat.db
+
+# Reset configuration
+rm .env
+```
+
+## 📚 Documentation
+
+- `docs/ARCHITECTURE.md` - Detailed system architecture
+- `docs/DEVELOPMENT.md` - Development setup and guidelines
+- `docs/TEST_SAFETY.md` - Test isolation and safety mechanisms
+- Inline code documentation with comprehensive docstrings
+- Type hints throughout the codebase for better IDE support
+
+## 🤝 Contributing
+
+Contributions welcome! Please:
+
+1. Read `docs/DEVELOPMENT.md` for setup instructions
+2. Run the test suite: `pytest -q`
+3. Follow code quality standards: `black --check . && mypy .`
+4. Write tests for new features
+5. Update documentation as needed
+
+**Development Workflow**:
+```bash
+# Create feature branch
+git checkout -b feature-name
+
+# Make changes and test
+pytest -q
+black --check .
+
+# Commit and push
+git commit -m "feat: description of changes"
+git push origin feature-name
+
+# Open pull request
+```
+
+## 📄 License
+
+MIT License - see `LICENSE` file for details.
+
+## 🙏 Acknowledgments
+
+- Built with [Flask](https://flask.palletsprojects.com/) web framework
+- UI styled with [Tailwind CSS](https://tailwindcss.com/)
+- Icons from [Google Material Icons](https://fonts.google.com/icons)
+- Developed with assistance from GitHub Copilot
+
+---
+
+**Ready to start chatting with AI?** Follow the [Quick Start](#-quick-start) guide above!
+
+For detailed documentation, see the `docs/` directory.
+For development setup, see `docs/DEVELOPMENT.md`.

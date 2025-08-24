@@ -1,4 +1,38 @@
-"""Chat module for handling AI provider API calls and responses."""
+"""
+Chat module for handling AI provider API calls and responses.
+
+This module provides a unified interface for interacting with multiple AI providers
+including OpenAI, Google Gemini, and Ollama. It handles both synchronous and
+asynchronous streaming responses while maintaining a consistent API.
+
+Key Features:
+    - Multi-provider support (OpenAI, Gemini, Ollama)
+    - Streaming and non-streaming responses
+    - Special handling for reasoning models (o3-mini, etc.)
+    - Web search capabilities for GPT-4.1 Live
+    - Automatic API key validation
+    - Consistent error handling across providers
+    - Type-safe response structures
+
+Architecture:
+    - Provider-specific implementations with unified interface
+    - Dataclass-based response structures for type safety
+    - Environment-based configuration management
+    - Graceful fallbacks for missing dependencies
+
+Usage:
+    >>> reply = generate_reply("Hello", [], "openai", "gpt-4o")
+    >>> if reply.error:
+    ...     print(f"Error: {reply.error}")
+    >>> else:
+    ...     print(f"Reply: {reply.reply}")
+
+Security:
+    - API keys loaded from environment variables
+    - Input sanitization for all provider calls
+    - Safe error message handling without exposing keys
+    - Test isolation with mocked API calls
+"""
 
 import os
 import subprocess
@@ -111,7 +145,10 @@ def _is_live_model(model: str) -> bool:
     Returns:
         True if it's a live model.
     """
-    return bool(model and (model.lower() == "gpt-4.1-live" or model.lower() == "gemini-2.5-pro-live"))
+    return bool(
+        model
+        and (model.lower() == "gpt-4.1-live" or model.lower() == "gemini-2.5-pro-live")
+    )
 
 
 def _openai_call(
@@ -158,7 +195,7 @@ def _openai_call(
         # Allow overriding reasoning_effort & temperature for reasoning models
         reasoning_effort = params.get("reasoning_effort", "low")
         reasoning_payload: Dict[str, Any] = {"effort": reasoning_effort}
-        reasoning_resp = client.responses.create(  # type: ignore[arg-type,assignment]
+        reasoning_resp = client.responses.create(  # type: ignore[call-overload]
             model=model,
             input=cast(Any, messages),
             reasoning=reasoning_payload,
@@ -169,21 +206,21 @@ def _openai_call(
         # Use Responses API for live models with real-time web search
         # Add a system message to optimize for web search queries
         enhanced_messages = []
-        
+
         # Add web search optimization system message
         system_msg = {
             "role": "system",
-            "content": "You have access to real-time web search capabilities. When answering questions that would benefit from current information, recent data, or live updates, automatically search for and incorporate the most relevant and up-to-date information available. Cite your sources when using web-searched information."
+            "content": "You have access to real-time web search capabilities. When answering questions that would benefit from current information, recent data, or live updates, automatically search for and incorporate the most relevant and up-to-date information available. Cite your sources when using web-searched information.",
         }
         enhanced_messages.append(system_msg)
         enhanced_messages.extend(messages)
-        
+
         # Use correct Responses API format with web search tool
-        live_resp = client.responses.create(  # type: ignore[arg-type,assignment]
+        live_resp = client.responses.create(  # type: ignore[call-overload]
             model="gpt-4.1",  # Use gpt-4.1 for web search capabilities
             input=cast(Any, enhanced_messages),
             tools=[{"type": "web_search"}],
-            tool_choice="auto"
+            tool_choice="auto",
         )
         return getattr(live_resp, "output_text", None)
     else:
@@ -251,20 +288,24 @@ def _gemini_call(
     allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
     generation_config = {k: params[k] for k in allowed if k in params}
     # web_search boolean could be toggled via safety_settings or tools in real API; placeholder ignore
-    model_obj = genai.GenerativeModel(model, generation_config=generation_config or None)
+    model_obj = genai.GenerativeModel(
+        model, generation_config=generation_config or None  # type: ignore[arg-type]
+    )
 
     # Start a new chat with prior history and send the latest message
     chat = model_obj.start_chat(history=cast(Any, chat_history))  # type: ignore[arg-type]
     resp = chat.send_message(user_text)
 
     # Check for safety/content filtering first
-    if hasattr(resp, 'candidates') and resp.candidates:
+    if hasattr(resp, "candidates") and resp.candidates:
         candidate = resp.candidates[0]
-        if hasattr(candidate, 'finish_reason'):
+        if hasattr(candidate, "finish_reason"):
             finish_reason = candidate.finish_reason
             # finish_reason values: 1=STOP, 2=MAX_TOKENS, 3=SAFETY, 4=RECITATION, 5=OTHER
             if finish_reason == 3:  # SAFETY - content was filtered
-                return "I cannot provide a response to that request due to safety filters."
+                return (
+                    "I cannot provide a response to that request due to safety filters."
+                )
             elif finish_reason == 4:  # RECITATION - content contained citations
                 return "I cannot provide a response that might contain recitations or copyrighted content."
             elif finish_reason == 2:  # MAX_TOKENS - response was truncated
@@ -281,9 +322,9 @@ def _gemini_call(
         # Handle the case where response.text fails due to no valid parts
         if "response.text" in str(e) and "finish_reason" in str(e):
             # Try to extract finish_reason from candidates
-            if hasattr(resp, 'candidates') and resp.candidates:
+            if hasattr(resp, "candidates") and resp.candidates:
                 candidate = resp.candidates[0]
-                if hasattr(candidate, 'finish_reason'):
+                if hasattr(candidate, "finish_reason"):
                     finish_reason = candidate.finish_reason
                     if finish_reason == 3:
                         return "I cannot provide a response to that request due to safety filters."
@@ -293,7 +334,7 @@ def _gemini_call(
                         return "I cannot generate a response to that request."
             return "I cannot generate a response to that request."
         raise  # Re-raise if it's a different ValueError
-    
+
     # Fallback: try candidates list
     if getattr(resp, "candidates", None):
         for cand in resp.candidates:
@@ -327,12 +368,10 @@ def _gemini_live_call(
     try:
         # Configure the new Google GenAI client
         client = google_genai.Client(api_key=key)
-        
+
         # Define the grounding tool for live search
-        grounding_tool = genai_types.Tool(
-            google_search=genai_types.GoogleSearch()
-        )
-        
+        grounding_tool = genai_types.Tool(google_search=genai_types.GoogleSearch())
+
         # Format the conversation history for the new API
         formatted_history = []
         for msg in history or []:
@@ -341,10 +380,10 @@ def _gemini_live_call(
             if role == "assistant":
                 role = "model"  # Gemini uses "model" instead of "assistant"
             formatted_history.append({"role": role, "content": content})
-        
+
         # Add the current message
         formatted_history.append({"role": "user", "content": message})
-        
+
         # Convert to the format expected by the new API
         # The new API expects a single content string with history included
         conversation_text = ""
@@ -353,68 +392,70 @@ def _gemini_live_call(
                 conversation_text += f"User: {msg['content']}\n"
             elif msg["role"] == "model":
                 conversation_text += f"Assistant: {msg['content']}\n"
-        
+
         # Use the base model name without the "-live" suffix
         base_model = model.replace("-live", "")
-        
+
         # Generate content with search grounding
         response = client.models.generate_content(
             model=base_model,
             contents=conversation_text.strip(),
-            config=genai_types.GenerateContentConfig(
-                tools=[grounding_tool]
-            )
+            config=genai_types.GenerateContentConfig(tools=[grounding_tool]),
         )
-        
+
         # Get the response text
-        response_text = response.text if hasattr(response, 'text') else None
-        
+        response_text = response.text if hasattr(response, "text") else None
+
         # If grounding metadata is available, append sources
         sources = []
-        if hasattr(response, 'grounding_metadata') and response.grounding_metadata:
+        if hasattr(response, "grounding_metadata") and response.grounding_metadata:
             # Try different ways to access the search results
             grounding = response.grounding_metadata
-            
+
             # Check for google_search_results
-            if hasattr(grounding, 'google_search_results'):
+            if hasattr(grounding, "google_search_results"):
                 for result in grounding.google_search_results:
-                    if hasattr(result, 'url'):
+                    if hasattr(result, "url"):
                         sources.append(result.url)
-                    elif hasattr(result, 'uri'):
+                    elif hasattr(result, "uri"):
                         sources.append(result.uri)
-            
+
             # Check for search_results
-            elif hasattr(grounding, 'search_results'):
+            elif hasattr(grounding, "search_results"):
                 for result in grounding.search_results:
-                    if hasattr(result, 'url'):
+                    if hasattr(result, "url"):
                         sources.append(result.url)
-                    elif hasattr(result, 'uri'):
+                    elif hasattr(result, "uri"):
                         sources.append(result.uri)
-            
+
             # Check for google_search (as in your example)
-            elif hasattr(grounding, 'google_search'):
+            elif hasattr(grounding, "google_search"):
                 for source in grounding.google_search:
-                    if hasattr(source, 'uri'):
+                    if hasattr(source, "uri"):
                         sources.append(source.uri)
-                    elif hasattr(source, 'url'):
+                    elif hasattr(source, "url"):
                         sources.append(source.url)
-            
+
             # Check for web_search_queries attribute
-            elif hasattr(grounding, 'web_search_queries'):
+            elif hasattr(grounding, "web_search_queries"):
                 # This might not have URLs but indicates search was used
                 pass
-        
+
         # Add sources to response if found
         if sources and response_text:
             response_text += "\n\n**Sources:**\n"
             for i, source in enumerate(sources[:5], 1):  # Limit to 5 sources
                 response_text += f"{i}. {source}\n"
-        elif response_text and hasattr(response, 'grounding_metadata') and response.grounding_metadata:
+        elif (
+            response_text
+            and hasattr(response, "grounding_metadata")
+            and response.grounding_metadata
+        ):
             # If we have grounding metadata but no sources found, indicate search was used
             response_text += "\n\n*ℹ️ Response generated using real-time web search*"
-        
+
         return response_text
-        
+
     except Exception as e:
         # Fallback to regular Gemini call if live search fails
         print(f"Gemini live search failed: {e}")
@@ -463,13 +504,13 @@ def _ollama_call(
         The reply string or None on failure.
     """
     import logging
-    
+
     logger = logging.getLogger(__name__)
-    
+
     if requests is None:
         logger.error("[OLLAMA] requests library not available")
         return None
-        
+
     if not is_ollama_server_running():
         logger.error("[OLLAMA] Ollama server is not running")
         return None
@@ -480,7 +521,7 @@ def _ollama_call(
 
     messages = _format_history_for_ollama(history, message)
     params = params or {}
-    
+
     # Map common parameters to Ollama format
     options = {}
     if "temperature" in params:
@@ -503,29 +544,29 @@ def _ollama_call(
 
     logger.info(f"[OLLAMA] Sending request to http://localhost:11434/api/chat")
     logger.info(f"[OLLAMA] Payload model: {payload['model']}")
-    logger.info(f"[OLLAMA] Payload messages count: {len(payload['messages'])}")
+    logger.info(
+        f"[OLLAMA] Payload messages count: {len(cast(list, payload.get('messages', [])))}"
+    )
 
     try:
         start_time = time.time()
         logger.info("[OLLAMA] Making HTTP request...")
-        
+
         response = requests.post(
-            "http://localhost:11434/api/chat",
-            json=payload,
-            timeout=60
+            "http://localhost:11434/api/chat", json=payload, timeout=60
         )
-        
+
         elapsed_time = time.time() - start_time
         logger.info(f"[OLLAMA] Request completed in {elapsed_time:.2f}s")
         logger.info(f"[OLLAMA] Response status: {response.status_code}")
-        
+
         if response.status_code == 200:
             data = response.json()
             logger.info(f"[OLLAMA] Response data keys: {list(data.keys())}")
-            
+
             message_content = data.get("message", {}).get("content", "")
             logger.info(f"[OLLAMA] Response length: {len(message_content)} chars")
-            
+
             if message_content:
                 logger.info(f"[OLLAMA] Response preview: {message_content[:100]}...")
                 return message_content
@@ -534,12 +575,12 @@ def _ollama_call(
                 return ""
         else:
             logger.error(f"[OLLAMA] HTTP error {response.status_code}: {response.text}")
-            
+
     except requests.RequestException as e:
         logger.error(f"[OLLAMA] Request exception: {type(e).__name__}: {e}")
     except Exception as e:
         logger.error(f"[OLLAMA] Unexpected error: {type(e).__name__}: {e}")
-        
+
     logger.error("[OLLAMA] Request failed, returning None")
     return None
 
@@ -598,7 +639,7 @@ def generate_reply(
                 content = _gemini_live_call(model, history, message, params=params)
             else:
                 content = _gemini_call(model, history, message, params=params)
-                
+
             if content:
                 return ChatReply(reply=content)
             key = get_api_key("gemini")
@@ -614,29 +655,34 @@ def generate_reply(
 
     elif provider_lower == "ollama":
         import logging
+
         logger = logging.getLogger(__name__)
-        
+
         try:
             logger.info(f"[OLLAMA] generate_reply called for model: {model}")
-            
+
             if not is_ollama_server_running():
                 logger.warning("[OLLAMA] Server not running")
                 return ChatReply(
-                    reply="", error="Ollama server not running", missing_key_for="ollama"
+                    reply="",
+                    error="Ollama server not running",
+                    missing_key_for="ollama",
                 )
-                
+
             logger.info("[OLLAMA] Server is running, calling _ollama_call")
             content = _ollama_call(model, history, message, params=params)
-            
+
             if content:
                 logger.info(f"[OLLAMA] Successfully got response: {len(content)} chars")
                 return ChatReply(reply=content)
-                
+
             logger.warning("[OLLAMA] _ollama_call returned empty content")
             return ChatReply(reply="", error="Ollama returned no content")
-            
+
         except Exception as e:
-            logger.error(f"[OLLAMA] Exception in generate_reply: {type(e).__name__}: {e}")
+            logger.error(
+                f"[OLLAMA] Exception in generate_reply: {type(e).__name__}: {e}"
+            )
             return ChatReply(
                 reply="", error=f"Ollama error: {e.__class__.__name__}: {e}"
             )

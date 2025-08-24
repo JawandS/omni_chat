@@ -1,3 +1,43 @@
+"""
+Database module for SQLite operations and data persistence.
+
+This module handles all database operations for the Omni Chat application using
+SQLite as the storage backend. It provides a clean abstraction layer for data
+access and manages database connections through Flask's application context.
+
+Key Features:
+    - SQLite database management with automatic migration
+    - Flask application context integration
+    - Complete CRUD operations for all entities
+    - Transaction management and connection handling
+    - UTC timestamp consistency across all operations
+    - Safe database initialization and schema updates
+
+Database Schema:
+    - chats: Store conversation metadata and settings
+    - messages: Store individual chat messages with roles
+    - projects: Organize chats into projects for better management
+    - tasks: Store scheduled AI tasks with execution parameters
+
+Architecture:
+    - Flask-integrated connection management via g object
+    - Automatic database initialization on first run
+    - Migration-friendly schema with version tracking
+    - Row factory for dict-like database results
+    - Consistent error handling and logging
+
+Usage:
+    >>> with app.app_context():
+    ...     chat_id = create_chat("Test Chat", "openai", "gpt-4o")
+    ...     insert_message(chat_id, "user", "Hello", "openai", "gpt-4o")
+
+Security:
+    - Input validation for all database operations
+    - SQL injection prevention through parameterized queries
+    - Safe path handling for database file location
+    - Test isolation with temporary databases
+"""
+
 import os
 import sqlite3
 from datetime import datetime, UTC
@@ -129,7 +169,9 @@ def _ensure_project_columns_exist() -> None:
         db = get_db()
         cols = [r[1] for r in db.execute("PRAGMA table_info(chats)").fetchall()]
         if "project_id" not in cols:
-            db.execute("ALTER TABLE chats ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL")
+            db.execute(
+                "ALTER TABLE chats ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL"
+            )
             db.commit()
     except Exception:
         # Best-effort migration; ignore if PRAGMA or ALTER not supported
@@ -332,7 +374,7 @@ def delete_chat(chat_id: int) -> None:
 
 def count_all_history() -> dict[str, int]:
     """Count total number of chats and messages in the database.
-    
+
     Returns:
         Dictionary with 'chats' and 'messages' counts.
     """
@@ -344,19 +386,19 @@ def count_all_history() -> dict[str, int]:
 
 def delete_all_history() -> dict[str, int]:
     """Delete all chats and messages from the database.
-    
+
     Returns:
         Dictionary with counts of deleted 'chats' and 'messages'.
     """
     db = get_db()
-    
+
     # Get counts before deletion
     counts = count_all_history()
-    
+
     # Delete all messages first, then all chats
     db.execute("DELETE FROM messages")
     db.execute("DELETE FROM chats")
-    
+
     return counts
 
 
@@ -415,10 +457,14 @@ def get_project(project_id: int) -> Optional[dict]:
     Returns:
         Project record or None if not found.
     """
-    row = get_db().execute(
-        "SELECT id, name, created_at, updated_at FROM projects WHERE id = ?",
-        (project_id,)
-    ).fetchone()
+    row = (
+        get_db()
+        .execute(
+            "SELECT id, name, created_at, updated_at FROM projects WHERE id = ?",
+            (project_id,),
+        )
+        .fetchone()
+    )
     return dict(row) if row else None
 
 
@@ -435,7 +481,9 @@ def delete_project(project_id: int) -> None:
     db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
 
 
-def add_chat_to_project(chat_id: int, project_id: int, now: Optional[str] = None) -> None:
+def add_chat_to_project(
+    chat_id: int, project_id: int, now: Optional[str] = None
+) -> None:
     """Add a chat to a project.
 
     Args:
@@ -445,7 +493,10 @@ def add_chat_to_project(chat_id: int, project_id: int, now: Optional[str] = None
     """
     db = get_db()
     ts = get_timestamp(now)
-    db.execute("UPDATE chats SET project_id = ?, updated_at = ? WHERE id = ?", (project_id, ts, chat_id))
+    db.execute(
+        "UPDATE chats SET project_id = ?, updated_at = ? WHERE id = ?",
+        (project_id, ts, chat_id),
+    )
     # Update project's updated_at timestamp
     db.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (ts, project_id))
 
@@ -459,7 +510,9 @@ def remove_chat_from_project(chat_id: int, now: Optional[str] = None) -> None:
     """
     db = get_db()
     ts = get_timestamp(now)
-    db.execute("UPDATE chats SET project_id = NULL, updated_at = ? WHERE id = ?", (ts, chat_id))
+    db.execute(
+        "UPDATE chats SET project_id = NULL, updated_at = ? WHERE id = ?", (ts, chat_id)
+    )
 
 
 def list_chats_by_project(project_id: Optional[int] = None) -> list:
@@ -481,17 +534,28 @@ def list_chats_by_project(project_id: Optional[int] = None) -> list:
         # Get chats for specific project
         rows = db.execute(
             "SELECT id, title, provider, model, project_id, created_at, updated_at FROM chats WHERE project_id = ? ORDER BY updated_at DESC",
-            (project_id,)
+            (project_id,),
         ).fetchall()
     return [dict(row) for row in rows]
 
 
 # Task management functions ----------------------------------------------
 
-def create_task(name: str, description: str, date: str, time: str, frequency: str, 
-                provider: str, model: str, output: str, email: Optional[str], now: str) -> int:
+
+def create_task(
+    name: str,
+    description: str,
+    date: str,
+    time: str,
+    frequency: str,
+    provider: str,
+    model: str,
+    output: str,
+    email: Optional[str],
+    now: Optional[str] = None,
+) -> int:
     """Create a new task.
-    
+
     Args:
         name: Task name
         description: Task description/prompt
@@ -503,30 +567,45 @@ def create_task(name: str, description: str, date: str, time: str, frequency: st
         output: Output destination ('application', 'email')
         email: Email address (required if output is 'email')
         now: Current timestamp
-        
+
     Returns:
         The ID of the created task
     """
     db = get_db()
     ts = get_timestamp(now)
-    
+
     # Calculate next_run based on date and time
     next_run = f"{date}T{time}:00Z"
-    
+
     cursor = db.execute(
         """INSERT INTO tasks 
            (name, description, date, time, frequency, provider, model, output, email, 
             next_run, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (name, description, date, time, frequency, provider, model, output, email,
-         next_run, ts, ts)
+        (
+            name,
+            description,
+            date,
+            time,
+            frequency,
+            provider,
+            model,
+            output,
+            email,
+            next_run,
+            ts,
+            ts,
+        ),
     )
-    return cursor.lastrowid
+    task_id = cursor.lastrowid
+    if task_id is None:
+        raise RuntimeError("Failed to create task: no row ID returned")
+    return task_id
 
 
 def list_tasks() -> list:
     """Get all tasks ordered by next execution time.
-    
+
     Returns:
         List of task records
     """
@@ -541,10 +620,10 @@ def list_tasks() -> list:
 
 def get_task(task_id: int) -> Optional[dict]:
     """Get a specific task by ID.
-    
+
     Args:
         task_id: The task ID to retrieve
-        
+
     Returns:
         Task record or None if not found
     """
@@ -553,16 +632,26 @@ def get_task(task_id: int) -> Optional[dict]:
         """SELECT id, name, description, date, time, frequency, provider, model,
                   output, email, status, last_run, next_run, created_at, updated_at
            FROM tasks WHERE id = ?""",
-        (task_id,)
+        (task_id,),
     ).fetchone()
     return dict(row) if row else None
 
 
-def update_task(task_id: int, name: str, description: str, date: str, time: str,
-                frequency: str, provider: str, model: str, output: str, 
-                email: Optional[str], now: str) -> None:
+def update_task(
+    task_id: int,
+    name: str,
+    description: str,
+    date: str,
+    time: str,
+    frequency: str,
+    provider: str,
+    model: str,
+    output: str,
+    email: Optional[str],
+    now: str,
+) -> None:
     """Update an existing task.
-    
+
     Args:
         task_id: The task ID to update
         name: Task name
@@ -578,23 +667,35 @@ def update_task(task_id: int, name: str, description: str, date: str, time: str,
     """
     db = get_db()
     ts = get_timestamp(now)
-    
+
     # Calculate next_run based on date and time
     next_run = f"{date}T{time}:00Z"
-    
+
     db.execute(
         """UPDATE tasks SET 
            name = ?, description = ?, date = ?, time = ?, frequency = ?,
            provider = ?, model = ?, output = ?, email = ?, next_run = ?, updated_at = ?
            WHERE id = ?""",
-        (name, description, date, time, frequency, provider, model, output, email,
-         next_run, ts, task_id)
+        (
+            name,
+            description,
+            date,
+            time,
+            frequency,
+            provider,
+            model,
+            output,
+            email,
+            next_run,
+            ts,
+            task_id,
+        ),
     )
 
 
 def delete_task(task_id: int) -> None:
     """Delete a task.
-    
+
     Args:
         task_id: The task ID to delete
     """
@@ -602,10 +703,15 @@ def delete_task(task_id: int) -> None:
     db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
 
 
-def update_task_status(task_id: int, status: str, last_run: Optional[str] = None,
-                      next_run: Optional[str] = None, now: str = None) -> None:
+def update_task_status(
+    task_id: int,
+    status: str,
+    last_run: Optional[str] = None,
+    next_run: Optional[str] = None,
+    now: Optional[str] = None,
+) -> None:
     """Update task execution status.
-    
+
     Args:
         task_id: The task ID to update
         status: New status ('pending', 'running', 'completed', 'failed')
@@ -617,19 +723,19 @@ def update_task_status(task_id: int, status: str, last_run: Optional[str] = None
     if now is None:
         now = datetime.now(UTC).isoformat()
     ts = get_timestamp(now)
-    
+
     if last_run is not None and next_run is not None:
         db.execute(
             "UPDATE tasks SET status = ?, last_run = ?, next_run = ?, updated_at = ? WHERE id = ?",
-            (status, last_run, next_run, ts, task_id)
+            (status, last_run, next_run, ts, task_id),
         )
     elif last_run is not None:
         db.execute(
             "UPDATE tasks SET status = ?, last_run = ?, updated_at = ? WHERE id = ?",
-            (status, last_run, ts, task_id)
+            (status, last_run, ts, task_id),
         )
     else:
         db.execute(
             "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-            (status, ts, task_id)
+            (status, ts, task_id),
         )

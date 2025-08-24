@@ -1,3 +1,45 @@
+"""
+Test configuration and fixtures for the Omni Chat application.
+
+This module provides comprehensive test isolation and safety mechanisms to ensure
+that tests never affect production data, make real API calls, or interfere with
+the production environment.
+
+Test Safety Features:
+    - Isolated temporary databases for each test
+    - Mocked API clients to prevent real provider calls
+    - Temporary .env files to avoid production config
+    - Separate providers.json configuration per test
+    - Working directory isolation
+    - API key mocking to prevent accidental real calls
+
+Test Fixtures:
+    - client: Flask test client with isolated database and config
+    - Automatic cleanup of temporary files after each test
+    - Monkeypatching of external dependencies
+    - Provider configuration from template files
+
+Architecture:
+    - Each test gets a fresh temporary directory
+    - Database operations use test-specific SQLite files
+    - All external API calls are intercepted and mocked
+    - Configuration files are isolated from production
+    - Environment variables are safely overridden
+
+Usage:
+    Tests automatically receive the `client` fixture:
+    >>> def test_api_endpoint(client):
+    ...     response = client.post('/api/chat', json={...})
+    ...     assert response.status_code == 200
+
+Safety Guarantees:
+    - No real API calls are made during testing
+    - Production database is never touched
+    - Real API keys are never used in tests
+    - All test data is automatically cleaned up
+    - Tests can run offline without external dependencies
+"""
+
 # Ensure the project root is on sys.path so `import app` works when running pytest
 import sys
 import json
@@ -20,7 +62,9 @@ def client(tmp_path):
     providers_template = Path(ROOT / "static" / "providers_template.json")
     providers_dst = tmp_path / "providers.json"
     if providers_template.exists():
-        providers_dst.write_text(providers_template.read_text(encoding="utf-8"), encoding="utf-8")
+        providers_dst.write_text(
+            providers_template.read_text(encoding="utf-8"), encoding="utf-8"
+        )
     else:
         # Fallback minimal providers config if template doesn't exist
         minimal_config = {
@@ -28,13 +72,18 @@ def client(tmp_path):
             "favorites": [],
             "providers": [
                 {"id": "openai", "name": "OpenAI", "models": ["gpt-4o", "gpt-5-mini"]},
-                {"id": "gemini", "name": "Google Gemini", "models": ["gemini-2.5-flash"]}
+                {
+                    "id": "gemini",
+                    "name": "Google Gemini",
+                    "models": ["gemini-2.5-flash"],
+                },
             ],
-            "blacklist": []
+            "blacklist": [],
         }
         providers_dst.write_text(json.dumps(minimal_config, indent=2), encoding="utf-8")
-    
+
     import os
+
     os.environ["PROVIDERS_JSON_PATH"] = str(providers_dst)
 
     app = create_app()
@@ -78,6 +127,7 @@ def _force_test_isolation(monkeypatch, tmp_path):
 
     # Import utils module and patch the get_api_key function there
     import utils as utils_mod
+
     monkeypatch.setattr(utils_mod, "get_api_key", mock_get_api_key)
 
     # Disable the actual client libraries to prevent any real API calls

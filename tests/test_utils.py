@@ -14,11 +14,7 @@ class TestValidationFunctions:
 
     def test_validate_chat_request_valid(self):
         """Test valid chat request validation."""
-        data = {
-            "message": "Hello world",
-            "provider": "openai",
-            "model": "gpt-4"
-        }
+        data = {"message": "Hello world", "provider": "openai", "model": "gpt-4"}
         message, provider, model = utils.validate_chat_request(data)
         assert message == "Hello world"
         assert provider == "openai"
@@ -78,7 +74,7 @@ class TestTextUtilities:
         """Test HTML escaping."""
         text = '<script>alert("xss")</script>'
         result = utils.escape_html(text)
-        expected = '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
+        expected = "&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;"
         assert result == expected
 
     def test_escape_html_ampersand(self):
@@ -153,7 +149,8 @@ class TestTimestampUtilities:
         assert ":" in result
         # Should be recent (within last minute)
         from datetime import datetime, UTC
-        parsed = datetime.fromisoformat(result.replace('Z', '+00:00'))
+
+        parsed = datetime.fromisoformat(result.replace("Z", "+00:00"))
         now = datetime.now(UTC)
         assert abs((now - parsed).total_seconds()) < 60
 
@@ -168,7 +165,7 @@ class TestAPIKeyUtilities:
         assert result == "PUT_API_KEY_HERE"
 
     def test_get_api_key_gemini(self):
-        """Test getting Gemini API key.""" 
+        """Test getting Gemini API key."""
         # This should return the mocked value due to test isolation
         result = utils.get_api_key("gemini")
         assert result == "PUT_API_KEY_HERE"
@@ -195,10 +192,10 @@ class TestAPIKeyUtilities:
     def test_get_api_key_logic_with_mock_bypass(self):
         """Test the actual get_api_key logic by temporarily bypassing isolation."""
         # Test the core logic without environment variable side effects
-        with patch('utils.os.getenv') as mock_getenv:
+        with patch("utils.os.getenv") as mock_getenv:
             # Test different cases
             mock_getenv.return_value = "test-key"
-            
+
             # Directly call the unmocked function logic
             def real_get_api_key(provider):
                 key_mapping = {
@@ -210,7 +207,7 @@ class TestAPIKeyUtilities:
                 if not env_var:  # This covers both "ollama" and unknown providers
                     return "local" if provider.lower() == "ollama" else ""
                 return mock_getenv(env_var, "")
-            
+
             assert real_get_api_key("openai") == "test-key"
             assert real_get_api_key("gemini") == "test-key"
             assert real_get_api_key("ollama") == "local"
@@ -220,136 +217,142 @@ class TestAPIKeyUtilities:
 class TestChatUtilities:
     """Test chat management utility functions."""
 
-    @patch('database.create_chat')
-    @patch('database.update_chat_meta')
+    @patch("database.create_chat")
+    @patch("database.update_chat_meta")
     def test_create_or_update_chat_new(self, mock_update, mock_create):
         """Test creating new chat."""
         mock_create.return_value = 123
-        
+
         result = utils.create_or_update_chat(
             None, "Test Title", "openai", "gpt-4", "2024-01-15T10:30:00Z"
         )
-        
+
         assert result == 123
-        mock_create.assert_called_once_with("Test Title", "openai", "gpt-4", "2024-01-15T10:30:00Z")
+        mock_create.assert_called_once_with(
+            "Test Title", "openai", "gpt-4", "2024-01-15T10:30:00Z"
+        )
         mock_update.assert_not_called()
 
-    @patch('database.create_chat')
-    @patch('database.update_chat_meta')
+    @patch("database.create_chat")
+    @patch("database.update_chat_meta")
     def test_create_or_update_chat_existing(self, mock_update, mock_create):
         """Test updating existing chat."""
         result = utils.create_or_update_chat(
             456, "Test Title", "openai", "gpt-4", "2024-01-15T10:30:00Z"
         )
-        
+
         assert result == 456
-        mock_update.assert_called_once_with(456, "openai", "gpt-4", "2024-01-15T10:30:00Z")
+        mock_update.assert_called_once_with(
+            456, "openai", "gpt-4", "2024-01-15T10:30:00Z"
+        )
         mock_create.assert_not_called()
 
 
 class TestOllamaUtilities:
     """Test Ollama utility functions."""
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_is_ollama_available_true(self, mock_run):
         """Test Ollama availability check when available."""
         mock_run.return_value.returncode = 0
-        
+
         result = utils.is_ollama_available()
-        
+
         assert result is True
         mock_run.assert_called_once_with(
             ["ollama", "--version"], capture_output=True, check=True, timeout=5
         )
 
-    @patch('subprocess.run')
+    @patch("subprocess.run")
     def test_is_ollama_available_false(self, mock_run):
         """Test Ollama availability check when not available."""
         mock_run.side_effect = FileNotFoundError()
-        
+
         result = utils.is_ollama_available()
-        
+
         assert result is False
 
-    @patch('requests.get')
+    @patch("requests.get")
     def test_is_ollama_server_running_true(self, mock_get):
         """Test Ollama server running check when running."""
         mock_response = mock_get.return_value
         mock_response.status_code = 200
-        
-        result = utils.is_ollama_server_running()
-        
-        assert result is True
-        mock_get.assert_called_once_with(
-            "http://localhost:11434/api/tags", timeout=15
-        )
 
-    @patch('requests.get')
+        result = utils.is_ollama_server_running()
+
+        assert result is True
+        mock_get.assert_called_once_with("http://localhost:11434/api/tags", timeout=15)
+
+    @patch("requests.get")
     def test_is_ollama_server_running_false(self, mock_get):
         """Test Ollama server running check when not running."""
         import requests
+
         mock_get.side_effect = requests.RequestException("Connection failed")
-        
+
         result = utils.is_ollama_server_running()
-        
+
         assert result is False
 
     def test_is_ollama_server_running_no_requests(self):
         """Test Ollama server check when requests module not available."""
         # Clear any existing requests module to force import
         import sys
-        requests_module = sys.modules.get('requests')
-        if 'requests' in sys.modules:
-            del sys.modules['requests']
-        
+
+        requests_module = sys.modules.get("requests")
+        if "requests" in sys.modules:
+            del sys.modules["requests"]
+
         try:
             # Temporarily remove requests and block its import
-            with patch.dict('sys.modules', {'requests': None}):
+            with patch.dict("sys.modules", {"requests": None}):
                 # This should trigger the ImportError handling in the function
                 result = utils.is_ollama_server_running()
                 assert result is False
         finally:
             # Restore requests module if it was there
             if requests_module is not None:
-                sys.modules['requests'] = requests_module
+                sys.modules["requests"] = requests_module
 
-    @patch('utils.is_ollama_server_running')
-    @patch('utils.is_ollama_available')
-    @patch('subprocess.Popen')
-    @patch('time.sleep')
-    def test_start_ollama_server_success(self, mock_sleep, mock_popen, mock_available, mock_running):
+    @patch("utils.is_ollama_server_running")
+    @patch("utils.is_ollama_available")
+    @patch("subprocess.Popen")
+    @patch("time.sleep")
+    def test_start_ollama_server_success(
+        self, mock_sleep, mock_popen, mock_available, mock_running
+    ):
         """Test starting Ollama server successfully."""
         mock_running.side_effect = [False, True]  # Not running, then running
         mock_available.return_value = True
-        
+
         result = utils.start_ollama_server()
-        
+
         assert result is True
         mock_popen.assert_called_once()
         mock_sleep.assert_called_once_with(2)
 
-    @patch('utils.is_ollama_server_running')
+    @patch("utils.is_ollama_server_running")
     def test_start_ollama_server_already_running(self, mock_running):
         """Test starting Ollama server when already running."""
         mock_running.return_value = True
-        
+
         result = utils.start_ollama_server()
-        
+
         assert result is True
 
-    @patch('utils.is_ollama_server_running')
-    @patch('utils.is_ollama_available')
+    @patch("utils.is_ollama_server_running")
+    @patch("utils.is_ollama_available")
     def test_start_ollama_server_not_available(self, mock_available, mock_running):
         """Test starting Ollama server when not available."""
         mock_running.return_value = False
         mock_available.return_value = False
-        
+
         result = utils.start_ollama_server()
-        
+
         assert result is False
 
-    @patch('utils.is_ollama_server_running')
-    @patch('requests.get')
+    @patch("utils.is_ollama_server_running")
+    @patch("requests.get")
     def test_get_ollama_models_success(self, mock_get, mock_running):
         """Test getting Ollama models successfully."""
         mock_running.return_value = True
@@ -359,33 +362,34 @@ class TestOllamaUtilities:
             "models": [
                 {"name": "llama2:7b"},
                 {"name": "codellama:13b"},
-                {"name": "llama2:7b"}  # Duplicate to test deduplication
+                {"name": "llama2:7b"},  # Duplicate to test deduplication
             ]
         }
-        
+
         result = utils.get_ollama_models()
-        
+
         assert result == ["codellama:13b", "llama2:7b"]  # Sorted and deduplicated
 
-    @patch('utils.is_ollama_server_running')
+    @patch("utils.is_ollama_server_running")
     def test_get_ollama_models_server_not_running(self, mock_running):
         """Test getting Ollama models when server not running."""
         mock_running.return_value = False
-        
+
         result = utils.get_ollama_models()
-        
+
         assert result == []
 
-    @patch('builtins.__import__')
+    @patch("builtins.__import__")
     def test_get_ollama_models_no_requests(self, mock_import):
         """Test getting Ollama models when requests module not available."""
+
         def import_side_effect(name, *args):
-            if name == 'requests':
+            if name == "requests":
                 raise ImportError("No module named 'requests'")
             return __import__(name, *args)
-        
+
         mock_import.side_effect = import_side_effect
-        
+
         result = utils.get_ollama_models()
         assert result == []
 
@@ -405,36 +409,33 @@ class TestEnvironmentManager:
         manager = utils.EnvironmentManager(env_path)
         assert manager.get_env_path() == env_path
 
-    @patch('utils.load_dotenv')
+    @patch("utils.load_dotenv")
     def test_load_env_into_process(self, mock_load_dotenv):
         """Test load_env_into_process method."""
         env_path = "/test/path/.env"
         manager = utils.EnvironmentManager(env_path)
-        
+
         manager.load_env_into_process()
-        
+
         mock_load_dotenv.assert_called_once_with(env_path, override=True)
 
-    @patch('utils.dotenv_values')
-    @patch('utils.os.getenv')
+    @patch("utils.dotenv_values")
+    @patch("utils.os.getenv")
     def test_get_api_keys(self, mock_getenv, mock_dotenv_values):
         """Test get_api_keys method."""
         mock_dotenv_values.return_value = {
             "OPENAI_API_KEY": "file-openai-key",
-            "GEMINI_API_KEY": None
+            "GEMINI_API_KEY": None,
         }
         mock_getenv.side_effect = lambda key, default: {
             "OPENAI_API_KEY": "file-openai-key",
-            "GEMINI_API_KEY": "env-gemini-key"
+            "GEMINI_API_KEY": "env-gemini-key",
         }.get(key, default)
-        
+
         manager = utils.EnvironmentManager("/test/.env")
         result = manager.get_api_keys()
-        
-        assert result == {
-            "openai": "file-openai-key",
-            "gemini": "env-gemini-key"
-        }
+
+        assert result == {"openai": "file-openai-key", "gemini": "env-gemini-key"}
 
 
 class TestProvidersConfigManager:
@@ -446,72 +447,68 @@ class TestProvidersConfigManager:
         manager = utils.ProvidersConfigManager(json_path)
         assert manager.providers_json_path == json_path
 
-    @patch('builtins.open', new_callable=mock_open, read_data='{"providers": []}')
+    @patch("builtins.open", new_callable=mock_open, read_data='{"providers": []}')
     def test_load_providers_json_success(self, mock_file):
         """Test loading providers JSON successfully."""
         manager = utils.ProvidersConfigManager("/test/providers.json")
-        
+
         result = manager.load_providers_json()
-        
+
         assert result == {"providers": []}
         mock_file.assert_called_once_with("/test/providers.json", "r", encoding="utf-8")
 
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('utils.os.path.join')
+    @patch("builtins.open", new_callable=mock_open)
+    @patch("utils.os.path.join")
     def test_load_providers_json_with_template(self, mock_join, mock_file):
         """Test loading providers JSON with template fallback."""
         mock_join.return_value = "/test/providers_template.json"
-        
+
         # First call (providers.json) raises FileNotFoundError
         # Second call (template) returns template data
         mock_file.side_effect = [
             FileNotFoundError(),
-            mock_open(read_data='{"providers": [{"id": "test"}]}').return_value
+            mock_open(read_data='{"providers": [{"id": "test"}]}').return_value,
         ]
-        
+
         manager = utils.ProvidersConfigManager("/test/providers.json")
-        
+
         # Mock the write method to avoid actual file writing
-        with patch.object(manager, 'write_providers_json'):
+        with patch.object(manager, "write_providers_json"):
             result = manager.load_providers_json()
-        
+
         assert result == {"providers": [{"id": "test"}]}
 
     def test_validate_provider_model_valid(self):
         """Test provider/model validation with valid combination."""
         manager = utils.ProvidersConfigManager("/test/providers.json")
-        
-        with patch.object(manager, 'load_providers_json') as mock_load:
+
+        with patch.object(manager, "load_providers_json") as mock_load:
             mock_load.return_value = {
-                "providers": [
-                    {"id": "openai", "models": ["gpt-4", "gpt-3.5-turbo"]}
-                ]
+                "providers": [{"id": "openai", "models": ["gpt-4", "gpt-3.5-turbo"]}]
             }
-            
+
             result = manager.validate_provider_model("openai", "gpt-4")
             assert result is True
 
     def test_validate_provider_model_invalid(self):
         """Test provider/model validation with invalid combination."""
         manager = utils.ProvidersConfigManager("/test/providers.json")
-        
-        with patch.object(manager, 'load_providers_json') as mock_load:
+
+        with patch.object(manager, "load_providers_json") as mock_load:
             mock_load.return_value = {
-                "providers": [
-                    {"id": "openai", "models": ["gpt-4", "gpt-3.5-turbo"]}
-                ]
+                "providers": [{"id": "openai", "models": ["gpt-4", "gpt-3.5-turbo"]}]
             }
-            
+
             result = manager.validate_provider_model("openai", "invalid-model")
             assert result is False
 
     def test_validate_provider_model_exception(self):
         """Test provider/model validation when exception occurs."""
         manager = utils.ProvidersConfigManager("/test/providers.json")
-        
-        with patch.object(manager, 'load_providers_json') as mock_load:
+
+        with patch.object(manager, "load_providers_json") as mock_load:
             mock_load.side_effect = Exception("Load failed")
-            
+
             result = manager.validate_provider_model("openai", "gpt-4")
             assert result is False
 
@@ -519,69 +516,80 @@ class TestProvidersConfigManager:
 class TestInitializeOllamaWithApp:
     """Test initialize_ollama_with_app function."""
 
-    @patch('utils.ProvidersConfigManager')
-    @patch('utils.is_ollama_available')
-    @patch('utils.start_ollama_server')
-    @patch('utils.get_ollama_models')
-    @patch('utils.os.environ.get')
-    @patch('utils.os.path.join')
-    def test_initialize_ollama_success(self, mock_join, mock_env_get, mock_get_models, 
-                                     mock_start_server, mock_available, mock_manager_class):
+    @patch("utils.ProvidersConfigManager")
+    @patch("utils.is_ollama_available")
+    @patch("utils.start_ollama_server")
+    @patch("utils.get_ollama_models")
+    @patch("utils.os.environ.get")
+    @patch("utils.os.path.join")
+    def test_initialize_ollama_success(
+        self,
+        mock_join,
+        mock_env_get,
+        mock_get_models,
+        mock_start_server,
+        mock_available,
+        mock_manager_class,
+    ):
         """Test successful Ollama initialization."""
         # Setup mocks
-        mock_app = type('MockApp', (), {'root_path': '/app'})()
+        mock_app = type("MockApp", (), {"root_path": "/app"})()
         mock_join.return_value = "/app/static/providers.json"
         mock_env_get.return_value = None
         mock_available.return_value = True
         mock_start_server.return_value = True
         mock_get_models.return_value = ["llama2:7b", "codellama:13b"]
-        
+
         mock_manager = mock_manager_class.return_value
         mock_manager.load_providers_json.return_value = {
             "providers": [{"id": "openai", "models": ["gpt-4"]}]
         }
-        
+
         # Run function
         utils.initialize_ollama_with_app(mock_app)
-        
+
         # Verify calls
         mock_manager.write_providers_json.assert_called_once()
         written_data = mock_manager.write_providers_json.call_args[0][0]
-        
+
         # Check that Ollama provider was added
-        ollama_providers = [p for p in written_data["providers"] if p.get("id") == "ollama"]
+        ollama_providers = [
+            p for p in written_data["providers"] if p.get("id") == "ollama"
+        ]
         assert len(ollama_providers) == 1
         assert ollama_providers[0]["models"] == ["llama2:7b", "codellama:13b"]
 
-    @patch('utils.ProvidersConfigManager')
-    @patch('utils.is_ollama_available')
+    @patch("utils.ProvidersConfigManager")
+    @patch("utils.is_ollama_available")
     def test_initialize_ollama_not_available(self, mock_available, mock_manager_class):
         """Test Ollama initialization when Ollama not available."""
-        mock_app = type('MockApp', (), {'root_path': '/app'})()
+        mock_app = type("MockApp", (), {"root_path": "/app"})()
         mock_available.return_value = False
-        
+
         mock_manager = mock_manager_class.return_value
         mock_manager.load_providers_json.return_value = {"providers": []}
-        
+
         utils.initialize_ollama_with_app(mock_app)
-        
+
         # Should still write config but without Ollama
         mock_manager.write_providers_json.assert_called_once()
         written_data = mock_manager.write_providers_json.call_args[0][0]
-        ollama_providers = [p for p in written_data["providers"] if p.get("id") == "ollama"]
+        ollama_providers = [
+            p for p in written_data["providers"] if p.get("id") == "ollama"
+        ]
         assert len(ollama_providers) == 0
 
-    @patch('utils.ProvidersConfigManager')
-    @patch('logging.getLogger')
+    @patch("utils.ProvidersConfigManager")
+    @patch("logging.getLogger")
     def test_initialize_ollama_exception(self, mock_get_logger, mock_manager_class):
         """Test Ollama initialization with exception."""
-        mock_app = type('MockApp', (), {'root_path': '/app'})()
+        mock_app = type("MockApp", (), {"root_path": "/app"})()
         mock_manager_class.side_effect = Exception("Config failed")
-        
+
         mock_logger = mock_get_logger.return_value
-        
+
         # Should not raise exception
         utils.initialize_ollama_with_app(mock_app)
-        
+
         # Should log error
         mock_logger.error.assert_called_once()

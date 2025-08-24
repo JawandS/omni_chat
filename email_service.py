@@ -72,9 +72,21 @@ class EmailService:
             if not execution_time:
                 execution_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
+            # Format timestamp for email subject (mm/dd/yy HH:MM:SS)
+            if execution_time:
+                try:
+                    # Parse the execution time and format for subject
+                    dt = datetime.fromisoformat(execution_time.replace("T", " ").replace("Z", ""))
+                    subject_timestamp = dt.strftime("%m/%d/%y %H:%M:%S")
+                except:
+                    # Fallback to current time if parsing fails
+                    subject_timestamp = datetime.now().strftime("%m/%d/%y %H:%M:%S")
+            else:
+                subject_timestamp = datetime.now().strftime("%m/%d/%y %H:%M:%S")
+            
             # Create email message
             message = MIMEMultipart("alternative")
-            message["Subject"] = f"{task_name} - {execution_time}"
+            message["Subject"] = f"{task_name} - {subject_timestamp}"
             message["From"] = self.from_email
             message["To"] = to_email
             

@@ -136,6 +136,18 @@ def _is_reasoning_model(model: str) -> bool:
     return bool(model and model.lower().startswith("o3"))
 
 
+def _is_thinking_model(model: str) -> bool:
+    """Check if a model is a GPT-5-thinking model.
+
+    Args:
+        model: The model name to check.
+
+    Returns:
+        True if it's a GPT-5-thinking model.
+    """
+    return bool(model and model.lower() == "gpt-5-thinking")
+
+
 def _is_live_model(model: str) -> bool:
     """Check if a model is a live model with real-time web search.
 
@@ -148,6 +160,37 @@ def _is_live_model(model: str) -> bool:
     return bool(
         model
         and (model.lower() == "gpt-4.1-live" or model.lower() == "gemini-2.5-pro-live")
+    )
+
+
+def _supports_thinking_budget_tokens(model: str) -> bool:
+    """Check if a model supports the thinking_budget_tokens parameter.
+
+    Args:
+        model: The model name to check.
+
+    Returns:
+        True if the model supports thinking_budget_tokens parameter.
+    """
+    if not model:
+        return False
+    
+    model_lower = model.lower()
+    
+    # thinking_budget_tokens is supported by o1-series and some specific models
+    # For now, we'll be conservative and only enable it for known supported models
+    supported_models = {
+        "o1-preview",
+        "o1-mini", 
+        "o1-2024-12-17",
+        "gpt-5-thinking",
+        # Add other models as they become available and support this parameter
+    }
+    
+    # Check if it's an o1-series model or specifically supported model
+    return (
+        model_lower.startswith("o1") or 
+        model_lower in supported_models
     )
 
 
@@ -184,9 +227,16 @@ def _openai_call(
         "seed",
         "stop",
         "response_format",
-        "thinking",
+        "reasoning_effort",
+        "verbosity",
         "thinking_budget_tokens",
     }
+    
+    # Filter out thinking_budget_tokens for models that don't support it
+    # thinking_budget_tokens is only supported by certain newer models
+    if not _supports_thinking_budget_tokens(model):
+        allowed = allowed - {"thinking_budget_tokens"}
+    
     call_args = {k: params[k] for k in allowed if k in params}
 
     if _is_reasoning_model(model):
@@ -202,6 +252,23 @@ def _openai_call(
             **({k: v for k, v in call_args.items() if k != "max_tokens"}),
         )
         return getattr(reasoning_resp, "output_text", None)
+    elif _is_thinking_model(model):
+        # Use Responses API for GPT-5-thinking models with reasoning_effort
+        # Casting messages because SDK expects complex union types; runtime accepts our structure.
+        reasoning_effort = params.get("reasoning_effort", "high")
+        verbosity = params.get("verbosity", "medium")
+        
+        thinking_args = {"reasoning_effort": reasoning_effort}
+        if "verbosity" in params:
+            thinking_args["verbosity"] = verbosity
+            
+        thinking_resp = client.responses.create(  # type: ignore[call-overload]
+            model=model,
+            input=cast(Any, messages),
+            **thinking_args,
+            **({k: v for k, v in call_args.items() if k not in ["max_tokens", "reasoning_effort", "verbosity"]}),
+        )
+        return getattr(thinking_resp, "output_text", None)
     elif _is_live_model(model):
         # Use Responses API for live models with real-time web search
         # Add a system message to optimize for web search queries

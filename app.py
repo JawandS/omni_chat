@@ -747,12 +747,24 @@ def create_app() -> Flask:
                             "default": "text",
                             "label": "Response Format",
                         },
+                    ]
+                )
+                # For gpt-5-thinking, add thinking controls
+                if model.lower() == "gpt-5-thinking":
+                    base.extend([
                         {
-                            "name": "thinking",
+                            "name": "reasoning_effort",
                             "type": "select",
-                            "options": ["none", "light", "deep"],
-                            "default": "none",
-                            "label": "Thinking Mode",
+                            "options": ["minimal", "medium", "high"],
+                            "default": "high",
+                            "label": "Reasoning Effort",
+                        },
+                        {
+                            "name": "verbosity",
+                            "type": "select",
+                            "options": ["minimal", "medium", "high"],
+                            "default": "medium",
+                            "label": "Verbosity",
                         },
                         {
                             "name": "thinking_budget_tokens",
@@ -761,10 +773,20 @@ def create_app() -> Flask:
                             "max": 8192,
                             "step": 1,
                             "default": 512,
-                            "label": "Thinking Budget",
+                            "label": "Thinking Budget Tokens",
                         },
-                    ]
-                )
+                    ])
+                else:
+                    # For other GPT-5 models, just add thinking_budget_tokens if supported
+                    base.append({
+                        "name": "thinking_budget_tokens",
+                        "type": "integer",
+                        "min": 32,
+                        "max": 8192,
+                        "step": 1,
+                        "default": 512,
+                        "label": "Thinking Budget Tokens",
+                    })
             if model.lower().startswith("o3"):
                 base.append(
                     {

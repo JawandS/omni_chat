@@ -84,15 +84,27 @@ def _format_history_for_openai(
 
 
 def _is_reasoning_model(model: str) -> bool:
-    """Check if the model is a reasoning model (o3 family) that uses Responses API.
+    """Check if a model is a reasoning model (o3 series).
 
     Args:
         model: The model name to check.
 
     Returns:
-        True if the model is a reasoning model.
+        True if it's a reasoning model.
     """
-    return (model or "").lower().startswith("o3")
+    return bool(model and model.lower().startswith("o3"))
+
+
+def _is_live_model(model: str) -> bool:
+    """Check if a model is a live model with real-time web search.
+
+    Args:
+        model: The model name to check.
+
+    Returns:
+        True if it's a live model.
+    """
+    return bool(model and model.lower() == "gpt-4.1-live")
 
 
 def _openai_call(
@@ -146,6 +158,27 @@ def _openai_call(
             **({k: v for k, v in call_args.items() if k != "max_tokens"}),
         )
         return getattr(reasoning_resp, "output_text", None)
+    elif _is_live_model(model):
+        # Use Responses API for live models with real-time web search
+        # Add a system message to optimize for web search queries
+        enhanced_messages = []
+        
+        # Add web search optimization system message
+        system_msg = {
+            "role": "system",
+            "content": "You have access to real-time web search capabilities. When answering questions that would benefit from current information, recent data, or live updates, automatically search for and incorporate the most relevant and up-to-date information available. Cite your sources when using web-searched information."
+        }
+        enhanced_messages.append(system_msg)
+        enhanced_messages.extend(messages)
+        
+        # Use correct Responses API format with web search tool
+        live_resp = client.responses.create(  # type: ignore[arg-type,assignment]
+            model="gpt-4.1",  # Use gpt-4.1 for web search capabilities
+            input=cast(Any, enhanced_messages),
+            tools=[{"type": "web_search"}],
+            tool_choice="auto"
+        )
+        return getattr(live_resp, "output_text", None)
     else:
         completion_resp = client.chat.completions.create(  # type: ignore[arg-type,assignment]
             model=model,

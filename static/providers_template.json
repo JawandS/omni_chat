@@ -21,6 +21,7 @@
       "id": "openai",
       "name": "OpenAI",
       "models": [
+        "gpt-4.1-live",
         "gpt-5-chat-latest",
         "gpt-5-mini",
         "gpt-4o",

@@ -83,8 +83,13 @@ When creating scheduled tasks:
 4. Email subject format: `{task_name} - {timestamp}`
 
 ## Provider and model support
-- Currently supporting OpenAI/Gemini
-- You can update `static/providers.json` for other models (might need to customize) `chat.py` for a different API call
+- Currently supporting OpenAI/Gemini/Ollama
+- **GPT-4.1 Live**: Special OpenAI model with real-time web search capabilities
+  - Automatically searches the web for current information
+  - Includes source citations
+  - Perfect for queries requiring up-to-date data, news, or recent events
+  - Uses OpenAI's Responses API for enhanced functionality
+- You can update `static/providers.json` for other models (might need to customize `chat.py` for different API calls)
 
 # Dev
 ## Structure

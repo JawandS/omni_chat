@@ -209,7 +209,12 @@
   function populateModels() {
     const p = providers.find(x => x.id === providerEl.value);
     const models = p ? p.models : [];
-    modelEl.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('') || '<option>No models</option>';
+    modelEl.innerHTML = models.map(m => {
+      if (m === 'gpt-4.1-live') {
+        return `<option value="${m}">${m} 🌐 (Real-time Web Search)</option>`;
+      }
+      return `<option value="${m}">${m}</option>`;
+    }).join('') || '<option>No models</option>';
     
     // If default model matches current provider, select it
     if (defaultSelection.provider === providerEl.value && defaultSelection.model && models.includes(defaultSelection.model)) {

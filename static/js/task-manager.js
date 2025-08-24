@@ -110,7 +110,11 @@ class TaskManager {
         selectedProvider.models.forEach(model => {
             const option = document.createElement('option');
             option.value = model;
-            option.textContent = model;
+            if (model === 'gpt-4.1-live') {
+                option.textContent = `${model} 🌐 (Real-time Web Search)`;
+            } else {
+                option.textContent = model;
+            }
             this.taskModelSelect.appendChild(option);
         });
         

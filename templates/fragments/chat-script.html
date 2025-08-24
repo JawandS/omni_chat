@@ -211,7 +211,7 @@
     const models = p ? p.models : [];
     modelEl.innerHTML = models.map(m => {
       if (m === 'gpt-4.1-live' || m === 'gemini-2.5-pro-live') {
-        return `<option value="${m}">${m} <span class="material-icons text-sm">language</span> (Real-time Web Search)</option>`;
+        return `<option value="${m}">${m}</option>`;
       }
       return `<option value="${m}">${m}</option>`;
     }).join('') || '<option>No models</option>';

@@ -111,7 +111,7 @@ class TaskManager {
             const option = document.createElement('option');
             option.value = model;
             if (model === 'gpt-4.1-live' || model === 'gemini-2.5-pro-live') {
-                option.innerHTML = `${model} <span class="material-icons text-sm">language</span> (Real-time Web Search)`;
+                option.innerHTML = `${model}`;
             } else {
                 option.textContent = model;
             }

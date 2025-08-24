@@ -64,16 +64,16 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label class="block text-sm text-white/70 mb-1">AI Provider</label>
-            <select id="task-provider" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm">
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Gemini</option>
+            <select id="task-provider" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" required>
+              <option value="">Select a provider...</option>
+              <!-- Options will be populated by JavaScript -->
             </select>
           </div>
           <div>
             <label class="block text-sm text-white/70 mb-1">Model</label>
-            <select id="task-model" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm">
-              <option value="gpt-4">GPT-4</option>
-              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+            <select id="task-model" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" required>
+              <option value="">Select a model...</option>
+              <!-- Options will be populated by JavaScript -->
             </select>
           </div>
         </div>

@@ -8,8 +8,10 @@ class TaskManager {
     constructor() {
         this.tasks = [];
         this.currentEditingTask = null;
+        this.providersData = null;
         this.initializeElements();
         this.attachEventListeners();
+        this.loadProviders();
     }
 
     initializeElements() {
@@ -19,6 +21,10 @@ class TaskManager {
         this.saveTaskBtn = document.getElementById('save-task');
         this.taskOutputSelect = document.getElementById('task-output');
         this.emailField = document.getElementById('email-field');
+        
+        // Provider/model elements
+        this.taskProviderSelect = document.getElementById('task-provider');
+        this.taskModelSelect = document.getElementById('task-model');
         
         // List elements
         this.taskList = document.getElementById('task-list');
@@ -41,12 +47,77 @@ class TaskManager {
         // Output type change
         this.taskOutputSelect?.addEventListener('change', () => this.toggleEmailField());
         
+        // Provider change should update models
+        this.taskProviderSelect?.addEventListener('change', () => this.updateModelOptions());
+        
         // Filter changes
         this.filterStatus?.addEventListener('change', () => this.renderTasks());
         this.filterFrequency?.addEventListener('change', () => this.renderTasks());
         
         // Form submit prevention
         this.taskForm?.addEventListener('submit', (e) => e.preventDefault());
+    }
+
+    async loadProviders() {
+        try {
+            const response = await fetch('/api/providers-config');
+            if (!response.ok) throw new Error('Failed to load providers');
+            
+            this.providersData = await response.json();
+            this.populateProviderOptions();
+        } catch (error) {
+            console.error('Error loading providers:', error);
+            this.showError('Failed to load providers');
+        }
+    }
+
+    populateProviderOptions() {
+        if (!this.taskProviderSelect || !this.providersData?.providers) return;
+        
+        // Clear existing options except the first one
+        this.taskProviderSelect.innerHTML = '<option value="">Select a provider...</option>';
+        
+        // Add provider options
+        this.providersData.providers.forEach(provider => {
+            const option = document.createElement('option');
+            option.value = provider.id;
+            option.textContent = provider.name;
+            this.taskProviderSelect.appendChild(option);
+        });
+        
+        // Set default provider if available
+        if (this.providersData.default?.provider) {
+            this.taskProviderSelect.value = this.providersData.default.provider;
+            this.updateModelOptions();
+        }
+    }
+
+    updateModelOptions() {
+        if (!this.taskModelSelect || !this.taskProviderSelect || !this.providersData?.providers) return;
+        
+        const selectedProviderId = this.taskProviderSelect.value;
+        
+        // Clear model options
+        this.taskModelSelect.innerHTML = '<option value="">Select a model...</option>';
+        
+        if (!selectedProviderId) return;
+        
+        // Find the selected provider
+        const selectedProvider = this.providersData.providers.find(p => p.id === selectedProviderId);
+        if (!selectedProvider?.models) return;
+        
+        // Add model options
+        selectedProvider.models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model;
+            this.taskModelSelect.appendChild(option);
+        });
+        
+        // Set default model if this is the default provider
+        if (selectedProviderId === this.providersData.default?.provider && this.providersData.default?.model) {
+            this.taskModelSelect.value = this.providersData.default.model;
+        }
     }
 
     async loadTasks() {
@@ -136,7 +207,7 @@ class TaskManager {
                     </div>
                     <div>
                         <span class="text-white/50">Provider:</span>
-                        <div class="font-medium">${task.provider.toUpperCase()} (${task.model})</div>
+                        <div class="font-medium">${this.getProviderDisplayName(task.provider)} (${task.model})</div>
                     </div>
                     <div>
                         <span class="text-white/50">Output:</span>
@@ -147,12 +218,20 @@ class TaskManager {
         `;
     }
 
-    openModal(taskData = null) {
+    async openModal(taskData = null) {
         if (!this.taskModal) return;
         
         this.currentEditingTask = taskData;
         this.taskModal.classList.remove('hidden');
         
+        // Ensure providers are loaded
+        if (!this.providersData) {
+            await this.loadProviders();
+        }
+        this.setupModalContent(taskData);
+    }
+
+    setupModalContent(taskData) {
         if (taskData) {
             // Editing existing task
             this.populateForm(taskData);
@@ -167,6 +246,14 @@ class TaskManager {
             const today = new Date().toISOString().split('T')[0];
             const dateInput = document.getElementById('task-date');
             if (dateInput) dateInput.value = today;
+            
+            // Set default provider and model
+            if (this.providersData?.default) {
+                if (this.taskProviderSelect) {
+                    this.taskProviderSelect.value = this.providersData.default.provider;
+                    this.updateModelOptions();
+                }
+            }
         }
     }
 
@@ -182,7 +269,7 @@ class TaskManager {
     populateForm(task) {
         const fields = [
             'task-name', 'task-description', 'task-date', 'task-time',
-            'task-frequency', 'task-provider', 'task-model', 'task-output'
+            'task-frequency', 'task-output'
         ];
         
         fields.forEach(fieldId => {
@@ -192,6 +279,19 @@ class TaskManager {
                 element.value = task[fieldName];
             }
         });
+        
+        // Handle provider and model separately
+        if (this.taskProviderSelect && task.provider) {
+            this.taskProviderSelect.value = task.provider;
+            this.updateModelOptions();
+            
+            // Set model after models are loaded
+            setTimeout(() => {
+                if (this.taskModelSelect && task.model) {
+                    this.taskModelSelect.value = task.model;
+                }
+            }, 100);
+        }
         
         const emailInput = document.getElementById('task-email');
         if (emailInput && task.email) {
@@ -217,8 +317,8 @@ class TaskManager {
     async saveTask(e) {
         e.preventDefault();
         
-        if (!this.taskForm?.checkValidity()) {
-            this.taskForm?.reportValidity();
+        // Use custom validation instead of HTML5 validation
+        if (!this.validateForm()) {
             return;
         }
         
@@ -270,6 +370,27 @@ class TaskManager {
         };
     }
 
+    validateForm() {
+        const data = this.getFormData();
+        
+        // Check required fields
+        const requiredFields = ['name', 'description', 'date', 'time', 'frequency', 'provider', 'model', 'output'];
+        for (const field of requiredFields) {
+            if (!data[field]) {
+                this.showError(`${field.charAt(0).toUpperCase() + field.slice(1)} is required`);
+                return false;
+            }
+        }
+        
+        // Check email if output is email
+        if (data.output === 'email' && !data.email) {
+            this.showError('Email is required when output destination is email');
+            return false;
+        }
+        
+        return true;
+    }
+
     async copyTask(taskId) {
         try {
             const response = await fetch(`/api/tasks/${taskId}/copy`, {
@@ -298,7 +419,7 @@ class TaskManager {
             }
             
             const data = await response.json();
-            this.openModal(data.task);
+            await this.openModal(data.task);
         } catch (error) {
             console.error('Error loading task for edit:', error);
             this.showError(error.message);
@@ -327,6 +448,13 @@ class TaskManager {
     }
 
     // Utility methods
+    getProviderDisplayName(providerId) {
+        if (!this.providersData?.providers) return providerId?.toUpperCase() || 'Unknown';
+        
+        const provider = this.providersData.providers.find(p => p.id === providerId);
+        return provider?.name || providerId?.toUpperCase() || 'Unknown';
+    }
+
     getStatusColor(status) {
         switch (status) {
             case 'pending': return 'bg-yellow-600/20 text-yellow-400';
@@ -381,6 +509,6 @@ if (typeof window !== 'undefined') {
 // Global function for backward compatibility
 window.openTaskModal = function() {
     if (window.taskManager) {
-        window.taskManager.openModal();
+        window.taskManager.openModal().catch(console.error);
     }
 };

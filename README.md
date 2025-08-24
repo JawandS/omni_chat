@@ -97,6 +97,68 @@ FROM_EMAIL=your-email@gmail.com
 2. Generate an App Password at [Google App Passwords](https://myaccount.google.com/apppasswords)
 3. Use the App Password in `SMTP_PASSWORD`
 
+### Ollama Setup (Local AI Models)
+
+Ollama allows you to run AI models locally on your machine, providing privacy and offline capabilities.
+
+**Installation**:
+
+1. **Install Ollama**
+   ```bash
+   # Linux/WSL
+   curl -fsSL https://ollama.com/install.sh | sh
+   
+   # macOS
+   brew install ollama
+   
+   # Or download from https://ollama.com/download
+   ```
+
+2. **Start Ollama service**
+   ```bash
+   # Start the Ollama service (runs on http://localhost:11434)
+   ollama serve
+   ```
+
+3. **Install models**
+   ```bash
+   # Popular models (choose based on your hardware)
+   ollama pull llama3.2        # 3B parameters - faster, less memory
+   ollama pull llama3.2:8b     # 8B parameters - balanced
+   ollama pull llama3.1:70b    # 70B parameters - high quality, requires more resources
+   ollama pull codellama       # Code-specialized model
+   ollama pull mistral         # Alternative high-quality model
+   ollama pull phi3           # Microsoft's efficient model
+   
+   # List available models
+   ollama list
+   ```
+
+4. **Configure in Omni Chat**
+   - Ollama models will automatically appear in the provider dropdown
+   - No API key required for Ollama
+   - Default Ollama URL: `http://localhost:11434` (auto-detected)
+
+**Hardware Requirements**:
+- **Minimum**: 4GB RAM (for 3B models)
+- **Recommended**: 8GB+ RAM (for 8B models) 
+- **High-end**: 16GB+ RAM (for 70B+ models)
+- **GPU**: Optional but significantly improves performance
+
+**Model Selection Guide**:
+- **llama3.2** (3B): Fast responses, good for basic tasks, low memory usage
+- **llama3.2:8b**: Balanced performance and quality
+- **llama3.1:70b**: Highest quality, requires substantial resources
+- **codellama**: Optimized for code generation and analysis
+- **mistral**: Alternative to Llama with good performance
+- **phi3**: Microsoft's efficient model, good balance of size and capability
+
+**Troubleshooting Ollama**:
+- **Service not running**: Ensure `ollama serve` is running in background
+- **Models not appearing**: Check that Ollama is accessible at `http://localhost:11434`
+- **Slow responses**: Consider using smaller models or enabling GPU acceleration
+- **Memory issues**: Use smaller models or increase system RAM
+
 ## 📖 User Guide
 
 ### Basic Usage

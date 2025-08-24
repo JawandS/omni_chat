@@ -141,6 +141,9 @@
           <button id="tab-keys" class="tab-button flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all active">
             🔑 API Keys
           </button>
+          <button id="tab-email" class="tab-button flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all">
+            📧 Email
+          </button>
           <button id="tab-blacklist" class="tab-button flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all">
             🚫 Blacklist
           </button>
@@ -169,6 +172,50 @@
             <div class="space-x-2">
               <button id="save-keys" class="rounded-lg bg-primary-600 hover:bg-primary-500 px-4 py-2 text-sm">Save</button>
             </div>
+          </div>
+        </div>
+
+        <!-- Email Configuration Tab -->
+        <div id="content-email" class="tab-content hidden">
+          <div class="space-y-4">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm text-white/70 mb-1">SMTP Server</label>
+                <input id="email-smtp-server" type="text" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="smtp.gmail.com" />
+              </div>
+              <div>
+                <label class="block text-sm text-white/70 mb-1">Port</label>
+                <input id="email-smtp-port" type="number" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="587" />
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm text-white/70 mb-1">Email Address</label>
+              <input id="email-from" type="email" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="your-email@gmail.com" />
+            </div>
+            <div>
+              <label class="block text-sm text-white/70 mb-1">Username</label>
+              <input id="email-username" type="text" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="your-email@gmail.com" />
+            </div>
+            <div>
+              <label class="block text-sm text-white/70 mb-1">Password / App Password</label>
+              <input id="email-password" type="password" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="your-app-password" />
+            </div>
+            <div class="flex items-center space-x-2">
+              <input id="email-use-tls" type="checkbox" class="rounded bg-white/10 border border-white/10" checked />
+              <label for="email-use-tls" class="text-sm text-white/70">Use TLS encryption</label>
+            </div>
+            <div class="bg-blue-500/10 border border-blue-400/20 rounded-lg p-3">
+              <h4 class="text-sm font-medium text-blue-300 mb-1">Test Email Configuration</h4>
+              <p class="text-xs text-blue-200/80 mb-2">Send a test email to verify your settings</p>
+              <div class="flex space-x-2">
+                <input id="test-email-address" type="email" class="flex-1 rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="test-recipient@example.com" />
+                <button id="test-email" class="rounded-lg bg-blue-600 hover:bg-blue-500 px-4 py-2 text-sm">Test</button>
+              </div>
+              <div id="email-test-result" class="mt-2 text-xs hidden"></div>
+            </div>
+          </div>
+          <div class="mt-4 flex justify-end space-x-2">
+            <button id="save-email" class="rounded-lg bg-primary-600 hover:bg-primary-500 px-4 py-2 text-sm">Save Configuration</button>
           </div>
         </div>
 
@@ -226,9 +273,23 @@
   
   // Tab elements
   const tabKeys = document.getElementById('tab-keys');
+  const tabEmail = document.getElementById('tab-email');
   const tabBlacklist = document.getElementById('tab-blacklist');
   const contentKeys = document.getElementById('content-keys');
+  const contentEmail = document.getElementById('content-email');
   const contentBlacklist = document.getElementById('content-blacklist');
+  
+  // Email elements
+  const emailSmtpServer = document.getElementById('email-smtp-server');
+  const emailSmtpPort = document.getElementById('email-smtp-port');
+  const emailFrom = document.getElementById('email-from');
+  const emailUsername = document.getElementById('email-username');
+  const emailPassword = document.getElementById('email-password');
+  const emailUseTls = document.getElementById('email-use-tls');
+  const saveEmailBtn = document.getElementById('save-email');
+  const testEmailBtn = document.getElementById('test-email');
+  const testEmailAddress = document.getElementById('test-email-address');
+  const emailTestResult = document.getElementById('email-test-result');
   
   // Blacklist elements
   const blacklistInput = document.getElementById('blacklist-input');
@@ -244,6 +305,9 @@
     if (tab === 'keys') {
       tabKeys.classList.add('active');
       contentKeys.classList.remove('hidden');
+    } else if (tab === 'email') {
+      tabEmail.classList.add('active');
+      contentEmail.classList.remove('hidden');
     } else if (tab === 'blacklist') {
       tabBlacklist.classList.add('active');
       contentBlacklist.classList.remove('hidden');
@@ -251,6 +315,7 @@
   }
 
   tabKeys.addEventListener('click', () => switchToTab('keys'));
+  tabEmail.addEventListener('click', () => switchToTab('email'));
   tabBlacklist.addEventListener('click', () => switchToTab('blacklist'));
 
   async function loadKeys() {
@@ -270,6 +335,89 @@
       const data = await r.json();
       renderBlacklist(data.blacklist || []);
     } catch (_) {}
+  }
+
+  async function loadEmailConfig() {
+    try {
+      const r = await fetch('/api/email/config');
+      if (!r.ok) return;
+      const data = await r.json();
+      emailSmtpServer.value = data.smtp_server || '';
+      emailSmtpPort.value = data.smtp_port || '587';
+      emailFrom.value = data.from_email || '';
+      emailUsername.value = data.smtp_username || '';
+      emailPassword.value = data.smtp_password === '***' ? '' : (data.smtp_password || '');
+      emailUseTls.checked = data.smtp_use_tls !== 'false';
+    } catch (_) {}
+  }
+
+  async function saveEmailConfig() {
+    const config = {
+      smtp_server: emailSmtpServer.value.trim(),
+      smtp_port: emailSmtpPort.value.trim(),
+      from_email: emailFrom.value.trim(),
+      smtp_username: emailUsername.value.trim(),
+      smtp_password: emailPassword.value.trim(),
+      smtp_use_tls: emailUseTls.checked ? 'true' : 'false'
+    };
+
+    try {
+      const r = await fetch('/api/email/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
+
+      if (r.ok) {
+        showEmailResult('Email configuration saved successfully!', 'success');
+      } else {
+        const error = await r.json();
+        showEmailResult(`Error: ${error.error}`, 'error');
+      }
+    } catch (err) {
+      showEmailResult(`Error: ${err.message}`, 'error');
+    }
+  }
+
+  async function testEmailConfig() {
+    const testEmail = testEmailAddress.value.trim();
+    if (!testEmail) {
+      showEmailResult('Please enter a test email address', 'error');
+      return;
+    }
+
+    testEmailBtn.textContent = 'Sending...';
+    testEmailBtn.disabled = true;
+
+    try {
+      const r = await fetch('/api/email/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to_email: testEmail })
+      });
+
+      if (r.ok) {
+        const data = await r.json();
+        showEmailResult(`Test email sent successfully to ${testEmail}!`, 'success');
+      } else {
+        const error = await r.json();
+        showEmailResult(`Test failed: ${error.error}`, 'error');
+      }
+    } catch (err) {
+      showEmailResult(`Test failed: ${err.message}`, 'error');
+    } finally {
+      testEmailBtn.textContent = 'Test';
+      testEmailBtn.disabled = false;
+    }
+  }
+
+  function showEmailResult(message, type) {
+    emailTestResult.textContent = message;
+    emailTestResult.className = `mt-2 text-xs ${type === 'success' ? 'text-green-400' : 'text-red-400'}`;
+    emailTestResult.classList.remove('hidden');
+    setTimeout(() => {
+      emailTestResult.classList.add('hidden');
+    }, 5000);
   }
 
   function renderBlacklist(words) {
@@ -367,6 +515,7 @@
   function openModal() {
     modal.classList.remove('hidden');
     loadKeys();
+    loadEmailConfig();
     loadBlacklist();
   }
 
@@ -393,6 +542,10 @@
   delGemini?.addEventListener('click', async () => {
     try { await fetch('/api/keys/gemini', { method: 'DELETE' }); geminiInput.value=''; loadKeys(); } catch (_) {}
   });
+
+  // Email functionality
+  saveEmailBtn?.addEventListener('click', saveEmailConfig);
+  testEmailBtn?.addEventListener('click', testEmailConfig);
 
   // Blacklist functionality
   addBlacklistBtn?.addEventListener('click', addBlacklistWord);

@@ -145,6 +145,64 @@ class EnvironmentManager:
         self.load_env_into_process()
         return True
 
+    def get_email_config(self) -> Dict[str, str]:
+        """Get current email configuration.
+        
+        Returns:
+            Dictionary with email configuration values.
+        """
+        values = dotenv_values(self.env_path)
+        
+        return {
+            "smtp_server": values.get("SMTP_SERVER") or os.getenv("SMTP_SERVER", ""),
+            "smtp_port": values.get("SMTP_PORT") or os.getenv("SMTP_PORT", "587"),
+            "smtp_username": values.get("SMTP_USERNAME") or os.getenv("SMTP_USERNAME", ""),
+            "smtp_password": values.get("SMTP_PASSWORD") or os.getenv("SMTP_PASSWORD", ""),
+            "smtp_use_tls": values.get("SMTP_USE_TLS") or os.getenv("SMTP_USE_TLS", "true"),
+            "from_email": values.get("FROM_EMAIL") or os.getenv("FROM_EMAIL", "")
+        }
+    
+    def update_email_config(self, email_data: Dict[str, Any]) -> Dict[str, Optional[str]]:
+        """Set or update email configuration.
+        
+        Args:
+            email_data: Dictionary with email config to update.
+            
+        Returns:
+            Dictionary of updated email config.
+        """
+        os.makedirs(os.path.dirname(self.env_path), exist_ok=True)
+
+        updated: Dict[str, Optional[str]] = {}
+        key_mapping = [
+            ("SMTP_SERVER", "smtp_server"),
+            ("SMTP_PORT", "smtp_port"), 
+            ("SMTP_USERNAME", "smtp_username"),
+            ("SMTP_PASSWORD", "smtp_password"),
+            ("SMTP_USE_TLS", "smtp_use_tls"),
+            ("FROM_EMAIL", "from_email")
+        ]
+
+        for env_key, body_key in key_mapping:
+            if body_key in email_data:
+                value = email_data.get(body_key)
+                if value is None or str(value).strip() == "":
+                    # Remove the key
+                    try:
+                        unset_key(self.env_path, env_key)
+                    except Exception:
+                        pass
+                    os.environ.pop(env_key, None)
+                    updated[body_key] = None
+                else:
+                    # Set the key
+                    set_key(self.env_path, env_key, str(value), quote_mode="never")
+                    os.environ[env_key] = str(value)
+                    updated[body_key] = str(value)
+
+        self.load_env_into_process()
+        return updated
+
 
 class ProvidersConfigManager:
     """Manages provider configuration JSON file operations."""

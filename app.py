@@ -44,6 +44,7 @@ from utils import (
     create_or_update_chat,
     initialize_ollama_with_app,
 )
+from email_service import send_task_email
 
 
 def create_app() -> Flask:
@@ -357,6 +358,147 @@ def create_app() -> Flask:
         if not success:
             return jsonify({"error": "unknown provider"}), 400
         return jsonify({"ok": True})
+
+    # Email configuration endpoints ------------------------------------------
+
+    @app.get("/api/email/config")
+    def api_get_email_config():
+        """Get current email configuration.
+
+        Returns:
+            JSON response with email configuration (passwords are masked).
+        """
+        config = get_env_manager().get_email_config()
+        # Mask password for security
+        if config.get("smtp_password"):
+            config["smtp_password"] = "***"
+        return jsonify(config)
+
+    @app.put("/api/email/config")
+    def api_put_email_config():
+        """Update email configuration.
+
+        Expected JSON body:
+            {
+                "smtp_server": str,
+                "smtp_port": str,
+                "smtp_username": str,
+                "smtp_password": str,
+                "smtp_use_tls": str,
+                "from_email": str
+            }
+
+        Returns:
+            JSON response with update status.
+        """
+        data = request.get_json(silent=True) or {}
+        
+        # Validate required fields
+        required_fields = ["smtp_server", "smtp_username", "smtp_password", "from_email"]
+        missing_fields = [field for field in required_fields if not data.get(field, "").strip()]
+        
+        if missing_fields:
+            return jsonify({
+                "error": f"Missing required fields: {', '.join(missing_fields)}"
+            }), 400
+        
+        # Validate email format (basic check)
+        from_email = data.get("from_email", "").strip()
+        if "@" not in from_email or "." not in from_email:
+            return jsonify({"error": "Invalid from_email format"}), 400
+        
+        # Validate port number
+        try:
+            port = int(data.get("smtp_port", 587))
+            if not (1 <= port <= 65535):
+                raise ValueError()
+            data["smtp_port"] = str(port)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid smtp_port. Must be a number between 1 and 65535"}), 400
+        
+        updated = get_env_manager().update_email_config(data)
+        return jsonify({"ok": True, "updated": updated})
+
+    @app.post("/api/email/test")
+    def api_test_email():
+        """Test email configuration by sending a test email.
+
+        Expected JSON body:
+            {
+                "to_email": str
+            }
+
+        Returns:
+            JSON response with test result.
+        """
+        data = request.get_json(silent=True) or {}
+        to_email = data.get("to_email", "").strip()
+        
+        if not to_email:
+            return jsonify({"error": "to_email is required"}), 400
+        
+        # Get email configuration
+        email_config = get_env_manager().get_email_config()
+        
+        # Send test email
+        result = send_task_email(
+            email_config=email_config,
+            to_email=to_email,
+            task_name="Email Configuration Test",
+            task_result="This is a test email sent from Omni Chat to verify your email configuration is working correctly.",
+            task_description="Test email to verify SMTP settings",
+            execution_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        
+        if result["success"]:
+            return jsonify({"ok": True, "message": result["message"]})
+        else:
+            return jsonify({"error": result["error"]}), 500
+
+    @app.post("/api/email/send-task-result")
+    def api_send_task_result():
+        """Send task result via email.
+
+        Expected JSON body:
+            {
+                "to_email": str,
+                "task_name": str,
+                "task_result": str,
+                "task_description": str (optional),
+                "execution_time": str (optional)
+            }
+
+        Returns:
+            JSON response with send result.
+        """
+        data = request.get_json(silent=True) or {}
+        
+        # Validate required fields
+        required_fields = ["to_email", "task_name", "task_result"]
+        missing_fields = [field for field in required_fields if not data.get(field)]
+        
+        if missing_fields:
+            return jsonify({
+                "error": f"Missing required fields: {', '.join(missing_fields)}"
+            }), 400
+        
+        # Get email configuration
+        email_config = get_env_manager().get_email_config()
+        
+        # Send task result email
+        result = send_task_email(
+            email_config=email_config,
+            to_email=data["to_email"],
+            task_name=data["task_name"],
+            task_result=data["task_result"],
+            task_description=data.get("task_description", ""),
+            execution_time=data.get("execution_time")
+        )
+        
+        if result["success"]:
+            return jsonify({"ok": True, "message": result["message"]})
+        else:
+            return jsonify({"error": result["error"]}), 500
 
     # Provider/model favorites & defaults ------------------------------------
 
@@ -855,6 +997,117 @@ def create_app() -> Flask:
             
         except Exception as e:
             return jsonify({"error": f"Failed to copy task: {str(e)}"}), 500
+
+    @app.post("/api/tasks/<int:task_id>/execute")
+    def api_execute_task(task_id: int):
+        """Execute a task immediately.
+        
+        Args:
+            task_id: ID of the task to execute
+        """
+        try:
+            # Get the task
+            task = get_task(task_id)
+            if not task:
+                return jsonify({"error": "task not found"}), 404
+            
+            # Update task status to running
+            execution_time = datetime.now(UTC).isoformat()
+            update_task_status(task_id, "running", execution_time)
+            commit()
+            
+            try:
+                # Generate the AI response
+                provider = task["provider"]
+                model = task["model"]
+                prompt = task["description"]
+                
+                # Use the existing chat logic to generate response
+                chat_reply = generate_reply(provider, model, prompt)
+                
+                if chat_reply.error:
+                    # Task failed - update status
+                    update_task_status(task_id, "failed")
+                    commit()
+                    return jsonify({
+                        "error": f"Task execution failed: {chat_reply.error}",
+                        "missing_key_for": chat_reply.missing_key_for
+                    }), 500
+                
+                # Get the response content
+                response_content = chat_reply.reply
+                
+                # Handle output destination
+                if task["output"] == "email":
+                    # Send via email
+                    if not task["email"]:
+                        update_task_status(task_id, "failed")
+                        commit()
+                        return jsonify({"error": "Email address is required for email output"}), 400
+                    
+                    # Get email configuration
+                    email_config = get_env_manager().get_email_config()
+                    
+                    # Send task result email
+                    email_result = send_task_email(
+                        email_config=email_config,
+                        to_email=task["email"],
+                        task_name=task["name"],
+                        task_result=response_content,
+                        task_description=task["description"],
+                        execution_time=execution_time
+                    )
+                    
+                    if not email_result["success"]:
+                        update_task_status(task_id, "failed")
+                        commit()
+                        return jsonify({"error": f"Failed to send email: {email_result['error']}"}), 500
+                
+                else:
+                    # Save to application (create a chat entry)
+                    chat_id = create_chat(
+                        title=f"Task: {task['name']}",
+                        provider=provider,
+                        model=model
+                    )
+                    
+                    # Insert user message (the task description)
+                    insert_message(
+                        chat_id=chat_id,
+                        content=prompt,
+                        role="user",
+                        now=execution_time
+                    )
+                    
+                    # Insert assistant response
+                    insert_message(
+                        chat_id=chat_id,
+                        content=response_content,
+                        role="assistant",
+                        now=datetime.now(UTC).isoformat()
+                    )
+                    
+                    commit()
+                
+                # Mark task as completed
+                update_task_status(task_id, "completed", execution_time)
+                commit()
+                
+                return jsonify({
+                    "message": "Task executed successfully",
+                    "result": response_content,
+                    "execution_time": execution_time,
+                    "output_method": task["output"]
+                })
+                
+            except Exception as execution_error:
+                # Update task status to failed
+                update_task_status(task_id, "failed")
+                commit()
+                raise execution_error
+                
+        except Exception as e:
+            return jsonify({"error": f"Failed to execute task: {str(e)}"}), 500
 
     return app
 

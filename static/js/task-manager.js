@@ -184,6 +184,9 @@ class TaskManager {
                         <span class="px-2 py-1 text-xs rounded-full ${this.getStatusColor(task.status)} font-medium">
                             ${task.status.charAt(0).toUpperCase() + task.status.slice(1)}
                         </span>
+                        <button onclick="window.taskManager.executeTask(${task.id})" class="text-green-400 hover:text-green-300 text-sm" title="Execute Task Now">
+                            ▶️
+                        </button>
                         <button onclick="window.taskManager.copyTask(${task.id})" class="text-blue-400 hover:text-blue-300 text-sm" title="Copy Task">
                             📋
                         </button>
@@ -447,6 +450,40 @@ class TaskManager {
         }
     }
 
+    async executeTask(taskId) {
+        if (!confirm('Are you sure you want to execute this task now?')) return;
+        
+        try {
+            this.showInfo('Executing task...');
+            
+            const response = await fetch(`/api/tasks/${taskId}/execute`, {
+                method: 'POST'
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                if (error.missing_key_for) {
+                    this.showError(`API key missing for ${error.missing_key_for}. Please configure it in settings.`);
+                } else {
+                    throw new Error(error.error || 'Failed to execute task');
+                }
+                return;
+            }
+            
+            const result = await response.json();
+            await this.loadTasks(); // Refresh the task list to show updated status
+            
+            if (result.output_method === 'email') {
+                this.showSuccess('Task executed successfully! Result sent via email.');
+            } else {
+                this.showSuccess('Task executed successfully! Result saved to chat history.');
+            }
+        } catch (error) {
+            console.error('Error executing task:', error);
+            this.showError(error.message);
+        }
+    }
+
     // Utility methods
     getProviderDisplayName(providerId) {
         if (!this.providersData?.providers) return providerId?.toUpperCase() || 'Unknown';
@@ -493,6 +530,13 @@ class TaskManager {
         console.error('Error:', message);
         // For now, just alert
         alert(`Error: ${message}`);
+    }
+
+    showInfo(message) {
+        // You can implement a toast notification system here
+        console.log('Info:', message);
+        // For now, just alert
+        alert(message);
     }
 }
 

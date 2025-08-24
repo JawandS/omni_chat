@@ -37,6 +37,13 @@ except ImportError:  # pragma: no cover - optional dependency in tests
     genai = None  # type: ignore
 
 try:
+    from google import genai as google_genai  # type: ignore
+    from google.genai import types as genai_types  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency in tests
+    google_genai = None  # type: ignore
+    genai_types = None  # type: ignore
+
+try:
     import requests  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency in tests
     requests = None  # type: ignore
@@ -104,7 +111,7 @@ def _is_live_model(model: str) -> bool:
     Returns:
         True if it's a live model.
     """
-    return bool(model and model.lower() == "gpt-4.1-live")
+    return bool(model and (model.lower() == "gpt-4.1-live" or model.lower() == "gemini-2.5-pro-live"))
 
 
 def _openai_call(
@@ -296,6 +303,124 @@ def _gemini_call(
     return None
 
 
+def _gemini_live_call(
+    model: str,
+    history: List[Dict[str, str]],
+    message: str,
+    params: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Call Google Gemini API with live search grounding.
+
+    Args:
+        model: The Gemini model name.
+        history: Previous message history.
+        message: The current user message.
+        params: Optional parameters for the generation.
+
+    Returns:
+        Reply content string or None on failure.
+    """
+    key = get_api_key("gemini")
+    if not key or key.startswith("PUT_") or google_genai is None or genai_types is None:
+        return None
+
+    try:
+        # Configure the new Google GenAI client
+        client = google_genai.Client(api_key=key)
+        
+        # Define the grounding tool for live search
+        grounding_tool = genai_types.Tool(
+            google_search=genai_types.GoogleSearch()
+        )
+        
+        # Format the conversation history for the new API
+        formatted_history = []
+        for msg in history or []:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "assistant":
+                role = "model"  # Gemini uses "model" instead of "assistant"
+            formatted_history.append({"role": role, "content": content})
+        
+        # Add the current message
+        formatted_history.append({"role": "user", "content": message})
+        
+        # Convert to the format expected by the new API
+        # The new API expects a single content string with history included
+        conversation_text = ""
+        for msg in formatted_history:
+            if msg["role"] == "user":
+                conversation_text += f"User: {msg['content']}\n"
+            elif msg["role"] == "model":
+                conversation_text += f"Assistant: {msg['content']}\n"
+        
+        # Use the base model name without the "-live" suffix
+        base_model = model.replace("-live", "")
+        
+        # Generate content with search grounding
+        response = client.models.generate_content(
+            model=base_model,
+            contents=conversation_text.strip(),
+            config=genai_types.GenerateContentConfig(
+                tools=[grounding_tool]
+            )
+        )
+        
+        # Get the response text
+        response_text = response.text if hasattr(response, 'text') else None
+        
+        # If grounding metadata is available, append sources
+        sources = []
+        if hasattr(response, 'grounding_metadata') and response.grounding_metadata:
+            # Try different ways to access the search results
+            grounding = response.grounding_metadata
+            
+            # Check for google_search_results
+            if hasattr(grounding, 'google_search_results'):
+                for result in grounding.google_search_results:
+                    if hasattr(result, 'url'):
+                        sources.append(result.url)
+                    elif hasattr(result, 'uri'):
+                        sources.append(result.uri)
+            
+            # Check for search_results
+            elif hasattr(grounding, 'search_results'):
+                for result in grounding.search_results:
+                    if hasattr(result, 'url'):
+                        sources.append(result.url)
+                    elif hasattr(result, 'uri'):
+                        sources.append(result.uri)
+            
+            # Check for google_search (as in your example)
+            elif hasattr(grounding, 'google_search'):
+                for source in grounding.google_search:
+                    if hasattr(source, 'uri'):
+                        sources.append(source.uri)
+                    elif hasattr(source, 'url'):
+                        sources.append(source.url)
+            
+            # Check for web_search_queries attribute
+            elif hasattr(grounding, 'web_search_queries'):
+                # This might not have URLs but indicates search was used
+                pass
+        
+        # Add sources to response if found
+        if sources and response_text:
+            response_text += "\n\n**Sources:**\n"
+            for i, source in enumerate(sources[:5], 1):  # Limit to 5 sources
+                response_text += f"{i}. {source}\n"
+        elif response_text and hasattr(response, 'grounding_metadata') and response.grounding_metadata:
+            # If we have grounding metadata but no sources found, indicate search was used
+            response_text += "\n\n*ℹ️ Response generated using real-time web search*"
+        
+        return response_text
+        
+    except Exception as e:
+        # Fallback to regular Gemini call if live search fails
+        print(f"Gemini live search failed: {e}")
+        return _gemini_call(model.replace("-live", ""), history, message, params)
+
+
 def _format_history_for_ollama(
     history: List[Dict[str, str]], latest_message: str
 ) -> List[Dict[str, str]]:
@@ -468,7 +593,12 @@ def generate_reply(
 
     elif provider_lower == "gemini":
         try:
-            content = _gemini_call(model, history, message, params=params)
+            # Check if this is a live search model
+            if model.lower().endswith("-live"):
+                content = _gemini_live_call(model, history, message, params=params)
+            else:
+                content = _gemini_call(model, history, message, params=params)
+                
             if content:
                 return ChatReply(reply=content)
             key = get_api_key("gemini")

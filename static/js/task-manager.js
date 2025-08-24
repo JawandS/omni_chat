@@ -110,8 +110,8 @@ class TaskManager {
         selectedProvider.models.forEach(model => {
             const option = document.createElement('option');
             option.value = model;
-            if (model === 'gpt-4.1-live') {
-                option.textContent = `${model} 🌐 (Real-time Web Search)`;
+            if (model === 'gpt-4.1-live' || model === 'gemini-2.5-pro-live') {
+                option.innerHTML = `${model} <span class="material-icons text-sm">language</span> (Real-time Web Search)`;
             } else {
                 option.textContent = model;
             }

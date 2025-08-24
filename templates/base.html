@@ -28,6 +28,8 @@
       }
     }
   </script>
+  <!-- Google Material Icons -->
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
   <style>
     :root { color-scheme: dark; }
     /* Ensure native dropdown popups are readable */
@@ -93,14 +95,16 @@
         <div class="text-xl font-semibold tracking-tight">Omni Chat</div>
         <div class="flex space-x-1">
           <a href="/" id="nav-chat" class="nav-tab px-3 py-2 rounded-lg text-sm font-medium transition-all">
-            💬 Chat
+            <span class="material-icons text-base align-text-bottom mr-1">chat</span>Chat
           </a>
           <a href="/schedule" id="nav-schedule" class="nav-tab px-3 py-2 rounded-lg text-sm font-medium transition-all">
-            📅 Schedule
+            <span class="material-icons text-base align-text-bottom mr-1">schedule</span>Schedule
           </a>
         </div>
       </div>
-      <button id="settings-btn" class="text-white/80 hover:text-white text-xl" title="Settings">⚙️</button>
+      <button id="settings-btn" class="text-white/80 hover:text-white text-xl" title="Settings">
+        <span class="material-icons">settings</span>
+      </button>
     </nav>
 
     <!-- Main content area that takes remaining height -->
@@ -132,20 +136,22 @@
     <div class="relative mx-auto mt-16 w-11/12 max-w-lg rounded-xl border border-white/10 bg-slate-900">
       <div class="flex items-center justify-between p-4 pb-0">
         <h2 class="text-lg font-semibold">Settings</h2>
-        <button class="text-white/70 hover:text-white" data-close>✖</button>
+        <button class="text-white/70 hover:text-white" data-close>
+          <span class="material-icons">close</span>
+        </button>
       </div>
       
       <!-- Tabs -->
       <div class="px-4 pt-3">
         <div class="flex space-x-1 bg-white/5 rounded-lg p-1">
           <button id="tab-keys" class="tab-button flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all active">
-            🔑 API Keys
+            <span class="material-icons text-base align-text-bottom mr-1">vpn_key</span>API Keys
           </button>
           <button id="tab-email" class="tab-button flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all">
-            📧 Email
+            <span class="material-icons text-base align-text-bottom mr-1">email</span>Email
           </button>
           <button id="tab-blacklist" class="tab-button flex-1 px-3 py-2 text-sm font-medium rounded-md transition-all">
-            🚫 Blacklist
+            <span class="material-icons text-base align-text-bottom mr-1">block</span>Blacklist
           </button>
         </div>
       </div>

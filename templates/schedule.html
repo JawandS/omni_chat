@@ -4,7 +4,7 @@
 
 {% block header_actions %}
 <button onclick="window.taskManager?.openModal()" class="flex items-center px-4 py-2 bg-primary-600 hover:bg-primary-500 rounded-lg text-sm font-medium transition-all">
-  <span class="mr-2">+</span>
+  <span class="material-icons text-sm mr-2">add</span>
   Create Task
 </button>
 {% endblock %}
@@ -39,7 +39,9 @@
     <div id="task-list" class="space-y-3">
       <!-- Tasks will be loaded here by JavaScript -->
       <div class="text-center py-12 text-white/60">
-        <div class="text-4xl mb-3">📅</div>
+        <div class="text-6xl mb-3">
+          <span class="material-icons text-6xl">event</span>
+        </div>
         <p class="text-lg mb-2">Loading tasks...</p>
       </div>
     </div>

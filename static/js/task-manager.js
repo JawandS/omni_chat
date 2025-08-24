@@ -166,7 +166,9 @@ class TaskManager {
     getEmptyStateHTML() {
         return `
             <div class="text-center py-12 text-white/60">
-                <div class="text-4xl mb-3">📅</div>
+                <div class="text-6xl mb-3">
+                    <span class="material-icons text-6xl">event</span>
+                </div>
                 <p class="text-lg mb-2">No scheduled tasks yet</p>
                 <p class="text-sm">Create your first task to get started with AI automation</p>
                 <button onclick="window.taskManager.openModal()" class="mt-4 px-4 py-2 bg-primary-600 hover:bg-primary-500 rounded-lg text-sm font-medium transition-all">
@@ -188,17 +190,17 @@ class TaskManager {
                         <span class="px-2 py-1 text-xs rounded-full ${this.getStatusColor(task.status)} font-medium">
                             ${task.status.charAt(0).toUpperCase() + task.status.slice(1)}
                         </span>
-                        <button onclick="window.taskManager.executeTask(${task.id})" class="text-green-400 hover:text-green-300 text-sm" title="Execute Task Now">
-                            ▶️
+                        <button onclick="window.taskManager.executeTask(${task.id})" class="text-green-400 hover:text-green-300 text-sm p-1" title="Execute Task Now">
+                            <span class="material-icons text-sm">play_arrow</span>
                         </button>
-                        <button onclick="window.taskManager.copyTask(${task.id})" class="text-blue-400 hover:text-blue-300 text-sm" title="Copy Task">
-                            📋
+                        <button onclick="window.taskManager.copyTask(${task.id})" class="text-blue-400 hover:text-blue-300 text-sm p-1" title="Copy Task">
+                            <span class="material-icons text-sm">content_copy</span>
                         </button>
-                        <button onclick="window.taskManager.editTask(${task.id})" class="text-yellow-400 hover:text-yellow-300 text-sm" title="Edit Task">
-                            ✏️
+                        <button onclick="window.taskManager.editTask(${task.id})" class="text-yellow-400 hover:text-yellow-300 text-sm p-1" title="Edit Task">
+                            <span class="material-icons text-sm">edit</span>
                         </button>
-                        <button onclick="window.taskManager.deleteTask(${task.id})" class="text-red-400 hover:text-red-300 text-sm" title="Delete Task">
-                            🗑️
+                        <button onclick="window.taskManager.deleteTask(${task.id})" class="text-red-400 hover:text-red-300 text-sm p-1" title="Delete Task">
+                            <span class="material-icons text-sm">delete</span>
                         </button>
                     </div>
                 </div>

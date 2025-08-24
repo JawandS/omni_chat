@@ -187,7 +187,7 @@ def commit() -> None:
 
 
 def create_chat(
-    title: str, provider: str, model: str, now: Optional[str] = None
+    title: str, provider: str, model: str, now: Optional[str] = None, project_id: Optional[int] = None
 ) -> int:
     """Create a new chat record.
 
@@ -196,6 +196,7 @@ def create_chat(
         provider: The AI provider name.
         model: The AI model name.
         now: Optional timestamp. If None, current time is used.
+        project_id: Optional project ID to assign the chat to.
 
     Returns:
         The ID of the created chat.
@@ -203,8 +204,8 @@ def create_chat(
     db = get_db()
     ts = get_timestamp(now)
     cur = db.execute(
-        "INSERT INTO chats (title, provider, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        (title, provider, model, ts, ts),
+        "INSERT INTO chats (title, provider, model, created_at, updated_at, project_id) VALUES (?, ?, ?, ?, ?, ?)",
+        (title, provider, model, ts, ts, project_id),
     )
     last_id = cur.lastrowid  # Optional[int] per typeshed
     if not isinstance(last_id, int):  # pragma: no cover - defensive

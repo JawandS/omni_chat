@@ -1057,7 +1057,16 @@
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, history, provider, model, chat_id: currentChatId, title, params: currentParams })
+        body: JSON.stringify({ 
+          message, 
+          history, 
+          provider, 
+          model, 
+          chat_id: currentChatId, 
+          title, 
+          params: currentParams,
+          project_id: currentProjectId || null  // Include project_id if selected
+        })
       });
 
       if (!response.ok) {

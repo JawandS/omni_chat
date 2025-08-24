@@ -229,7 +229,7 @@ class TestChatUtilities:
 
         assert result == 123
         mock_create.assert_called_once_with(
-            "Test Title", "openai", "gpt-4", "2024-01-15T10:30:00Z"
+            "Test Title", "openai", "gpt-4", "2024-01-15T10:30:00Z", None
         )
         mock_update.assert_not_called()
 
@@ -246,6 +246,22 @@ class TestChatUtilities:
             456, "openai", "gpt-4", "2024-01-15T10:30:00Z"
         )
         mock_create.assert_not_called()
+
+    @patch("database.create_chat")
+    @patch("database.update_chat_meta")
+    def test_create_or_update_chat_with_project(self, mock_update, mock_create):
+        """Test creating new chat with project assignment."""
+        mock_create.return_value = 789
+
+        result = utils.create_or_update_chat(
+            None, "Project Chat", "openai", "gpt-4", "2024-01-15T10:30:00Z", 5
+        )
+
+        assert result == 789
+        mock_create.assert_called_once_with(
+            "Project Chat", "openai", "gpt-4", "2024-01-15T10:30:00Z", 5
+        )
+        mock_update.assert_not_called()
 
 
 class TestOllamaUtilities:

@@ -139,7 +139,8 @@ def create_app() -> Flask:
                 "chat_id": int (optional),
                 "provider": str,
                 "model": str,
-                "title": str (optional)
+                "title": str (optional),
+                "project_id": int (optional)
             }
 
         Returns:
@@ -151,6 +152,7 @@ def create_app() -> Flask:
 
             chat_id = data.get("chat_id")
             title = (data.get("title") or "").strip()
+            project_id = data.get("project_id")  # Extract project_id from request
             now = datetime.now(UTC).isoformat()
 
             # Generate default title if needed
@@ -158,7 +160,7 @@ def create_app() -> Flask:
                 title = generate_chat_title(message)
 
             # Create or update chat
-            chat_id = create_or_update_chat(chat_id, title, provider, model, now)
+            chat_id = create_or_update_chat(chat_id, title, provider, model, now, project_id)
 
             # Save user message
             insert_message(

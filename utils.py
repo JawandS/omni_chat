@@ -431,7 +431,7 @@ def get_api_key(provider: str) -> str:
 
 
 def create_or_update_chat(
-    chat_id: Optional[int], title: str, provider: str, model: str, now: str
+    chat_id: Optional[int], title: str, provider: str, model: str, now: str, project_id: Optional[int] = None
 ) -> int:
     """Create a new chat or update existing chat metadata.
 
@@ -441,6 +441,7 @@ def create_or_update_chat(
         provider: AI provider name.
         model: AI model name.
         now: Current timestamp.
+        project_id: Optional project ID to assign the chat to (only used for new chats).
 
     Returns:
         Chat ID (new or existing).
@@ -448,7 +449,7 @@ def create_or_update_chat(
     from database import create_chat, update_chat_meta
 
     if not chat_id:
-        chat_id = create_chat(title, provider, model, now)
+        chat_id = create_chat(title, provider, model, now, project_id)
     else:
         update_chat_meta(chat_id, provider, model, now)
     return chat_id

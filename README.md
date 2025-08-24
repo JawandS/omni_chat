@@ -23,6 +23,65 @@ OPENAI_API_KEY=sk-...your-openai-key...
 GEMINI_API_KEY=...your-gemini-key...
 ```
 
+## Email Setup (Optional)
+
+The application supports sending task results via email. To configure email functionality:
+
+### 1. Configure SMTP Settings
+
+Click the settings icon (⚙️) in the application and go to the **Email** tab, or add the following to your `.env` file:
+
+```bash
+# Email Configuration
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=your-email@gmail.com    # Usually same as FROM_EMAIL
+SMTP_PASSWORD=your-app-password
+SMTP_USE_TLS=true
+FROM_EMAIL=your-email@gmail.com       # Usually same as SMTP_USERNAME
+```
+
+**Note:** For most email providers (Gmail, Yahoo, Outlook), `SMTP_USERNAME` and `FROM_EMAIL` are the same - your email address. They're separate fields to support corporate email servers where authentication username might differ from the sending address.
+
+### 2. Gmail Setup (Recommended)
+
+For Gmail, you'll need to use an App Password instead of your regular password:
+
+1. Enable 2-Factor Authentication on your Google account
+2. Go to [Google App Passwords](https://myaccount.google.com/apppasswords)
+3. Generate a new App Password for "Mail"
+4. Use this App Password in the `SMTP_PASSWORD` field
+
+### 3. Other Email Providers
+
+Common SMTP settings for other providers:
+
+**Outlook/Hotmail:**
+- SMTP Server: `smtp-mail.outlook.com`
+- Port: `587`
+- TLS: `true`
+
+**Yahoo:**
+- SMTP Server: `smtp.mail.yahoo.com`
+- Port: `587` or `465`
+- TLS: `true`
+
+### 4. Test Your Configuration
+
+After configuring SMTP settings:
+1. Go to Settings → Email tab
+2. Enter a test email address
+3. Click "Test" to verify your configuration
+4. You should receive a test email if everything is set up correctly
+
+### 5. Using Email in Tasks
+
+When creating scheduled tasks:
+1. Set "Output Destination" to "Email"
+2. Enter the recipient email address
+3. When the task executes, results will be sent to the specified email
+4. Email subject format: `{task_name} - {timestamp}`
+
 ## Provider and model support
 - Currently supporting OpenAI/Gemini
 - You can update `static/providers.json` for other models (might need to customize) `chat.py` for a different API call

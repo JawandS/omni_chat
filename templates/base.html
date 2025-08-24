@@ -67,25 +67,65 @@
     .tab-button:hover {
       color: rgba(255, 255, 255, 0.8);
     }
+    
+    /* Navigation tab styling */
+    .nav-tab {
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .nav-tab.active {
+      background-color: rgba(59, 130, 246, 0.2);
+      color: rgb(147, 197, 253);
+    }
+    .nav-tab:hover {
+      color: rgba(255, 255, 255, 0.8);
+      background-color: rgba(255, 255, 255, 0.05);
+    }
   </style>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
 </head>
 <body class="h-svh min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white antialiased">
-  <main class="relative h-full w-full">
+  <main class="relative h-full w-full flex flex-col">
     <div class="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-white/10 to-transparent"></div>
-    <section class="flex flex-col h-full w-full px-4 md:px-6 py-4">
-      <header class="mb-3 md:mb-4 flex items-center justify-between">
+    
+    <!-- Navigation -->
+    <nav class="flex items-center justify-between px-4 md:px-6 py-3 border-b border-white/10 flex-shrink-0">
+      <div class="flex items-center space-x-6">
+        <div class="text-xl font-semibold tracking-tight">Omni Chat</div>
+        <div class="flex space-x-1">
+          <a href="/" id="nav-chat" class="nav-tab px-3 py-2 rounded-lg text-sm font-medium transition-all">
+            💬 Chat
+          </a>
+          <a href="/schedule" id="nav-schedule" class="nav-tab px-3 py-2 rounded-lg text-sm font-medium transition-all">
+            📅 Schedule
+          </a>
+        </div>
+      </div>
+      <button id="settings-btn" class="text-white/80 hover:text-white text-xl" title="Settings">⚙️</button>
+    </nav>
+
+    <!-- Main content area that takes remaining height -->
+    <section class="flex flex-col flex-1 min-h-0 w-full px-4 md:px-6 py-4">
+      {% if request.endpoint != 'home' %}
+      <header class="mb-3 md:mb-4 flex items-center justify-between flex-shrink-0">
         <div class="text-2xl md:text-3xl font-semibold tracking-tight">
           {% block header %}{% endblock %}
         </div>
-  <button id="settings-btn" class="text-white/80 hover:text-white text-2xl md:text-3xl" title="Settings">⚙️</button>
+        {% block header_actions %}{% endblock %}
       </header>
+      {% endif %}
+      
       <div class="flex-1 min-h-0 text-white/90">
         {% block content %}{% endblock %}
       </div>
       {% block extra %}{% endblock %}
     </section>
   </main>
+  
+  <!-- Include task modal if on schedule page -->
+  {% if request.endpoint == 'schedule' %}
+    {% include 'fragments/task-modal.html' %}
+  {% endif %}
+
   <!-- Settings Modal -->
   <div id="settings-modal" class="fixed inset-0 z-50 hidden">
     <div class="absolute inset-0 bg-black/60" data-close></div>
@@ -160,6 +200,22 @@
     </div>
   </div>
   <script>
+  // Navigation functionality
+  function setActiveNavTab() {
+    const currentPath = window.location.pathname;
+    document.querySelectorAll('.nav-tab').forEach(tab => tab.classList.remove('active'));
+    
+    if (currentPath === '/schedule') {
+      document.getElementById('nav-schedule').classList.add('active');
+    } else {
+      document.getElementById('nav-chat').classList.add('active');
+    }
+  }
+  
+  // Initialize navigation on page load
+  setActiveNavTab();
+  
+  // Settings Modal functionality
   const settingsBtn = document.getElementById('settings-btn');
   const modal = document.getElementById('settings-modal');
   const openaiInput = document.getElementById('key-openai');

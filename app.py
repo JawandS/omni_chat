@@ -28,6 +28,12 @@ from database import (
     add_chat_to_project,
     remove_chat_from_project,
     list_chats_by_project,
+    create_task,
+    list_tasks,
+    get_task,
+    update_task,
+    delete_task as db_delete_task,
+    update_task_status,
 )
 from chat import generate_reply
 from utils import (
@@ -84,6 +90,11 @@ def create_app() -> Flask:
     def home():
         """Render the main chat interface."""
         return render_template("index.html")
+
+    @app.route("/schedule")
+    def schedule():
+        """Render the task scheduling interface."""
+        return render_template("schedule.html")
 
     @app.post("/api/chat")
     def api_chat():
@@ -643,6 +654,207 @@ def create_app() -> Flask:
             return jsonify({"chats": chats})
         except Exception:  # pragma: no cover
             return jsonify({"error": "failed to load chats"}), 500
+
+    # Task Management API Endpoints
+    @app.get("/api/tasks")
+    def api_list_tasks():
+        """Get all scheduled tasks.
+        
+        Returns:
+            JSON object with tasks array
+        """
+        try:
+            tasks = list_tasks()
+            return jsonify({"tasks": tasks})
+        except Exception:  # pragma: no cover
+            return jsonify({"error": "failed to load tasks"}), 500
+
+    @app.post("/api/tasks")
+    def api_create_task():
+        """Create a new scheduled task.
+        
+        Expected JSON body:
+            {
+                "name": str,
+                "description": str,
+                "date": str (YYYY-MM-DD),
+                "time": str (HH:MM),
+                "frequency": str,
+                "provider": str,
+                "model": str,
+                "output": str,
+                "email": str (optional)
+            }
+        """
+        try:
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "JSON body required"}), 400
+            
+            # Basic validation
+            required_fields = ["name", "description", "date", "time", "frequency", "provider", "model", "output"]
+            for field in required_fields:
+                if not data.get(field):
+                    return jsonify({"error": f"{field} is required"}), 400
+            
+            # Validate email if output is email
+            if data["output"] == "email" and not data.get("email"):
+                return jsonify({"error": "email is required when output is email"}), 400
+            
+            # Create task in database
+            now = datetime.now(UTC).isoformat()
+            task_id = create_task(
+                name=data["name"],
+                description=data["description"],
+                date=data["date"],
+                time=data["time"],
+                frequency=data["frequency"],
+                provider=data["provider"],
+                model=data["model"],
+                output=data["output"],
+                email=data.get("email"),
+                now=now
+            )
+            commit()
+            
+            # Return the created task
+            task = get_task(task_id)
+            return jsonify({
+                "id": task_id,
+                "message": "Task created successfully",
+                "task": task
+            }), 201
+            
+        except Exception as e:
+            return jsonify({"error": f"Failed to create task: {str(e)}"}), 500
+
+    @app.get("/api/tasks/<int:task_id>")
+    def api_get_task(task_id: int):
+        """Get a specific task by ID.
+        
+        Args:
+            task_id: The task ID to retrieve
+        """
+        try:
+            task = get_task(task_id)
+            if not task:
+                return jsonify({"error": "task not found"}), 404
+            return jsonify({"task": task})
+        except Exception as e:
+            return jsonify({"error": f"Failed to get task: {str(e)}"}), 500
+
+    @app.delete("/api/tasks/<int:task_id>")
+    def api_delete_task(task_id: int):
+        """Delete a scheduled task.
+        
+        Args:
+            task_id: ID of the task to delete
+        """
+        try:
+            task = get_task(task_id)
+            if not task:
+                return jsonify({"error": "task not found"}), 404
+            
+            db_delete_task(task_id)
+            commit()
+            return jsonify({"message": f"Task {task_id} deleted successfully"})
+            
+        except Exception as e:
+            return jsonify({"error": f"Failed to delete task: {str(e)}"}), 500
+
+    @app.put("/api/tasks/<int:task_id>")
+    def api_update_task(task_id: int):
+        """Update a scheduled task.
+        
+        Args:
+            task_id: ID of the task to update
+            
+        Expected JSON body: Same as create_task
+        """
+        try:
+            task = get_task(task_id)
+            if not task:
+                return jsonify({"error": "task not found"}), 404
+            
+            data = request.get_json()
+            if not data:
+                return jsonify({"error": "JSON body required"}), 400
+            
+            # Basic validation
+            required_fields = ["name", "description", "date", "time", "frequency", "provider", "model", "output"]
+            for field in required_fields:
+                if not data.get(field):
+                    return jsonify({"error": f"{field} is required"}), 400
+            
+            # Validate email if output is email
+            if data["output"] == "email" and not data.get("email"):
+                return jsonify({"error": "email is required when output is email"}), 400
+            
+            # Update task in database
+            now = datetime.now(UTC).isoformat()
+            update_task(
+                task_id=task_id,
+                name=data["name"],
+                description=data["description"],
+                date=data["date"],
+                time=data["time"],
+                frequency=data["frequency"],
+                provider=data["provider"],
+                model=data["model"],
+                output=data["output"],
+                email=data.get("email"),
+                now=now
+            )
+            commit()
+            
+            # Return updated task
+            updated_task = get_task(task_id)
+            return jsonify({
+                "message": f"Task {task_id} updated successfully",
+                "task": updated_task
+            })
+            
+        except Exception as e:
+            return jsonify({"error": f"Failed to update task: {str(e)}"}), 500
+
+    @app.post("/api/tasks/<int:task_id>/copy")
+    def api_copy_task(task_id: int):
+        """Create a copy of an existing task.
+        
+        Args:
+            task_id: ID of the task to copy
+        """
+        try:
+            original_task = get_task(task_id)
+            if not original_task:
+                return jsonify({"error": "task not found"}), 404
+            
+            # Create a copy with modified name
+            now = datetime.now(UTC).isoformat()
+            new_task_id = create_task(
+                name=f"Copy of {original_task['name']}",
+                description=original_task["description"],
+                date=original_task["date"],
+                time=original_task["time"],
+                frequency=original_task["frequency"],
+                provider=original_task["provider"],
+                model=original_task["model"],
+                output=original_task["output"],
+                email=original_task["email"],
+                now=now
+            )
+            commit()
+            
+            # Return the copied task
+            new_task = get_task(new_task_id)
+            return jsonify({
+                "id": new_task_id,
+                "message": "Task copied successfully",
+                "task": new_task
+            }), 201
+            
+        except Exception as e:
+            return jsonify({"error": f"Failed to copy task: {str(e)}"}), 500
 
     return app
 

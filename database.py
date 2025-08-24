@@ -79,6 +79,23 @@ def init_db() -> None:
             created_at TEXT NOT NULL,
             FOREIGN KEY(chat_id) REFERENCES chats(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            frequency TEXT NOT NULL CHECK(frequency IN ('none', 'daily', 'weekly', 'monthly', 'yearly')),
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            output TEXT NOT NULL CHECK(output IN ('application', 'email')),
+            email TEXT,
+            status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'failed')),
+            last_run TEXT,
+            next_run TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         """
     )
     db.commit()
@@ -467,3 +484,152 @@ def list_chats_by_project(project_id: Optional[int] = None) -> list:
             (project_id,)
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+# Task management functions ----------------------------------------------
+
+def create_task(name: str, description: str, date: str, time: str, frequency: str, 
+                provider: str, model: str, output: str, email: Optional[str], now: str) -> int:
+    """Create a new task.
+    
+    Args:
+        name: Task name
+        description: Task description/prompt
+        date: Execution date (YYYY-MM-DD)
+        time: Execution time (HH:MM)
+        frequency: Frequency ('none', 'daily', 'weekly', 'monthly', 'yearly')
+        provider: AI provider
+        model: AI model
+        output: Output destination ('application', 'email')
+        email: Email address (required if output is 'email')
+        now: Current timestamp
+        
+    Returns:
+        The ID of the created task
+    """
+    db = get_db()
+    ts = get_timestamp(now)
+    
+    # Calculate next_run based on date and time
+    next_run = f"{date}T{time}:00Z"
+    
+    cursor = db.execute(
+        """INSERT INTO tasks 
+           (name, description, date, time, frequency, provider, model, output, email, 
+            next_run, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (name, description, date, time, frequency, provider, model, output, email,
+         next_run, ts, ts)
+    )
+    return cursor.lastrowid
+
+
+def list_tasks() -> list:
+    """Get all tasks ordered by next execution time.
+    
+    Returns:
+        List of task records
+    """
+    db = get_db()
+    rows = db.execute(
+        """SELECT id, name, description, date, time, frequency, provider, model, 
+                  output, email, status, last_run, next_run, created_at, updated_at
+           FROM tasks ORDER BY next_run ASC"""
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_task(task_id: int) -> Optional[dict]:
+    """Get a specific task by ID.
+    
+    Args:
+        task_id: The task ID to retrieve
+        
+    Returns:
+        Task record or None if not found
+    """
+    db = get_db()
+    row = db.execute(
+        """SELECT id, name, description, date, time, frequency, provider, model,
+                  output, email, status, last_run, next_run, created_at, updated_at
+           FROM tasks WHERE id = ?""",
+        (task_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def update_task(task_id: int, name: str, description: str, date: str, time: str,
+                frequency: str, provider: str, model: str, output: str, 
+                email: Optional[str], now: str) -> None:
+    """Update an existing task.
+    
+    Args:
+        task_id: The task ID to update
+        name: Task name
+        description: Task description/prompt
+        date: Execution date (YYYY-MM-DD)
+        time: Execution time (HH:MM)
+        frequency: Frequency ('none', 'daily', 'weekly', 'monthly', 'yearly')
+        provider: AI provider
+        model: AI model
+        output: Output destination ('application', 'email')
+        email: Email address (required if output is 'email')
+        now: Current timestamp
+    """
+    db = get_db()
+    ts = get_timestamp(now)
+    
+    # Calculate next_run based on date and time
+    next_run = f"{date}T{time}:00Z"
+    
+    db.execute(
+        """UPDATE tasks SET 
+           name = ?, description = ?, date = ?, time = ?, frequency = ?,
+           provider = ?, model = ?, output = ?, email = ?, next_run = ?, updated_at = ?
+           WHERE id = ?""",
+        (name, description, date, time, frequency, provider, model, output, email,
+         next_run, ts, task_id)
+    )
+
+
+def delete_task(task_id: int) -> None:
+    """Delete a task.
+    
+    Args:
+        task_id: The task ID to delete
+    """
+    db = get_db()
+    db.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+
+
+def update_task_status(task_id: int, status: str, last_run: Optional[str] = None,
+                      next_run: Optional[str] = None, now: str = None) -> None:
+    """Update task execution status.
+    
+    Args:
+        task_id: The task ID to update
+        status: New status ('pending', 'running', 'completed', 'failed')
+        last_run: Last execution timestamp (optional)
+        next_run: Next execution timestamp (optional)
+        now: Current timestamp (optional, defaults to current time)
+    """
+    db = get_db()
+    if now is None:
+        now = datetime.now(UTC).isoformat()
+    ts = get_timestamp(now)
+    
+    if last_run is not None and next_run is not None:
+        db.execute(
+            "UPDATE tasks SET status = ?, last_run = ?, next_run = ?, updated_at = ? WHERE id = ?",
+            (status, last_run, next_run, ts, task_id)
+        )
+    elif last_run is not None:
+        db.execute(
+            "UPDATE tasks SET status = ?, last_run = ?, updated_at = ? WHERE id = ?",
+            (status, last_run, ts, task_id)
+        )
+    else:
+        db.execute(
+            "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
+            (status, ts, task_id)
+        )

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block header %}Schedule Tasks{% endblock %}
+
+{% block header_actions %}
+<button onclick="window.taskManager?.openModal()" class="flex items-center px-4 py-2 bg-primary-600 hover:bg-primary-500 rounded-lg text-sm font-medium transition-all">
+  <span class="mr-2">+</span>
+  Create Task
+</button>
+{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-full">
+  <!-- Task Filters/Status Bar -->
+  <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center space-x-2">
+      <select id="filter-status" class="rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm">
+        <option value="all">All Tasks</option>
+        <option value="pending">Pending</option>
+        <option value="running">Running</option>
+        <option value="completed">Completed</option>
+        <option value="failed">Failed</option>
+      </select>
+      <select id="filter-frequency" class="rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm">
+        <option value="all">All Frequencies</option>
+        <option value="none">One-time</option>
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+      </select>
+    </div>
+    <div class="text-sm text-white/60">
+      <span id="task-count">0 tasks</span>
+    </div>
+  </div>
+
+  <!-- Task List -->
+  <div class="flex-1 overflow-y-auto">
+    <div id="task-list" class="space-y-3">
+      <!-- Tasks will be loaded here by JavaScript -->
+      <div class="text-center py-12 text-white/60">
+        <div class="text-4xl mb-3">📅</div>
+        <p class="text-lg mb-2">Loading tasks...</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra %}
+<!-- Load the task manager JavaScript module -->
+<script src="{{ url_for('static', filename='js/task-manager.js') }}"></script>
+{% endblock %}

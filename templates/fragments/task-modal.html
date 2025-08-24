@@ -1,0 +1,89 @@
+<!-- Task Creation/Edit Modal -->
+<div id="task-modal" class="fixed inset-0 z-50 hidden">
+  <div class="absolute inset-0 bg-black/60" data-close-task></div>
+  <div class="relative mx-auto mt-8 w-11/12 max-w-2xl rounded-xl border border-white/10 bg-slate-900">
+    <div class="flex items-center justify-between p-4 pb-0">
+      <h2 class="text-lg font-semibold">Create Scheduled Task</h2>
+      <button class="text-white/70 hover:text-white" data-close-task>✖</button>
+    </div>
+    
+    <div class="p-4">
+      <form id="task-form" class="space-y-4">
+        <!-- Task Name -->
+        <div>
+          <label class="block text-sm text-white/70 mb-1">Task Name</label>
+          <input id="task-name" type="text" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="Enter task name..." required />
+        </div>
+        
+        <!-- Execution Date & Time -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-white/70 mb-1">Execution Date</label>
+            <input id="task-date" type="date" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" required />
+          </div>
+          <div>
+            <label class="block text-sm text-white/70 mb-1">Execution Time</label>
+            <input id="task-time" type="time" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" required />
+          </div>
+        </div>
+        
+        <!-- Recurring Frequency -->
+        <div>
+          <label class="block text-sm text-white/70 mb-1">Recurring Frequency</label>
+          <select id="task-frequency" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm">
+            <option value="none">One-time</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="yearly">Yearly</option>
+          </select>
+        </div>
+        
+        <!-- Task Description -->
+        <div>
+          <label class="block text-sm text-white/70 mb-1">Task Description</label>
+          <textarea id="task-description" class="w-full h-24 rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm resize-none" placeholder="Enter the task description or prompt for the LLM..." required></textarea>
+        </div>
+        
+        <!-- Output Option -->
+        <div>
+          <label class="block text-sm text-white/70 mb-1">Output Destination</label>
+          <select id="task-output" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm">
+            <option value="application">Application (Save to Chat History)</option>
+            <option value="email">Email (Send via Email)</option>
+          </select>
+        </div>
+        
+        <!-- Email Address (conditional) -->
+        <div id="email-field" class="hidden">
+          <label class="block text-sm text-white/70 mb-1">Email Address</label>
+          <input id="task-email" type="email" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm" placeholder="Enter email address..." />
+        </div>
+        
+        <!-- Provider & Model Selection -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm text-white/70 mb-1">AI Provider</label>
+            <select id="task-provider" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm">
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm text-white/70 mb-1">Model</label>
+            <select id="task-model" class="w-full rounded-lg bg-white/10 border border-white/10 px-3 py-2 text-sm">
+              <option value="gpt-4">GPT-4</option>
+              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+            </select>
+          </div>
+        </div>
+      </form>
+      
+      <!-- Footer -->
+      <div class="mt-6 pt-4 border-t border-white/10 flex justify-end space-x-3">
+        <button class="rounded-lg bg-white/10 hover:bg-white/20 px-4 py-2 text-sm" data-close-task>Cancel</button>
+        <button id="save-task" class="rounded-lg bg-primary-600 hover:bg-primary-500 px-4 py-2 text-sm">Create Task</button>
+      </div>
+    </div>
+  </div>
+</div>

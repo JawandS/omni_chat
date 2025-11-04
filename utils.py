@@ -117,14 +117,17 @@ class EnvironmentManager:
         values = dotenv_values(self.env_path)
         openai_key = values.get("OPENAI_API_KEY") if values else None
         gemini_key = values.get("GEMINI_API_KEY") if values else None
+        claude_key = values.get("CLAUDE_API_KEY") if values else None
 
         # If not in file, try process env
         openai_key = openai_key or os.getenv("OPENAI_API_KEY", "")
         gemini_key = gemini_key or os.getenv("GEMINI_API_KEY", "")
+        claude_key = claude_key or os.getenv("CLAUDE_API_KEY", "")
 
         return {
             "openai": openai_key or "",
             "gemini": gemini_key or "",
+            "claude": claude_key or "",
         }
 
     def update_api_keys(self, keys_data: Dict[str, Any]) -> Dict[str, Optional[str]]:
@@ -139,7 +142,11 @@ class EnvironmentManager:
         os.makedirs(os.path.dirname(self.env_path), exist_ok=True)
 
         updated: Dict[str, Optional[str]] = {}
-        key_mapping = [("OPENAI_API_KEY", "openai"), ("GEMINI_API_KEY", "gemini")]
+        key_mapping = [
+            ("OPENAI_API_KEY", "openai"),
+            ("GEMINI_API_KEY", "gemini"),
+            ("CLAUDE_API_KEY", "claude"),
+        ]
 
         for env_key, body_key in key_mapping:
             if body_key in keys_data:
@@ -165,12 +172,16 @@ class EnvironmentManager:
         """Delete API key for a specific provider.
 
         Args:
-            provider: Provider name ('openai' or 'gemini').
+            provider: Provider name ('openai', 'gemini', or 'claude').
 
         Returns:
             True if successful, False if provider is unknown.
         """
-        key_mapping = {"openai": "OPENAI_API_KEY", "gemini": "GEMINI_API_KEY"}
+        key_mapping = {
+            "openai": "OPENAI_API_KEY",
+            "gemini": "GEMINI_API_KEY",
+            "claude": "CLAUDE_API_KEY",
+        }
         env_key = key_mapping.get(provider.lower())
 
         if not env_key:
@@ -410,7 +421,7 @@ def get_api_key(provider: str) -> str:
     """Get API key for the specified provider.
 
     Args:
-        provider: Provider name ('openai', 'gemini', or 'ollama').
+        provider: Provider name ('openai', 'gemini', 'claude', or 'ollama').
 
     Returns:
         API key from environment or empty string if not found.
@@ -418,6 +429,7 @@ def get_api_key(provider: str) -> str:
     key_mapping = {
         "openai": "OPENAI_API_KEY",
         "gemini": "GEMINI_API_KEY",
+        "claude": "CLAUDE_API_KEY",
         "ollama": "",  # Ollama doesn't require API key for local usage
     }
     env_var = key_mapping.get(provider.lower(), "")

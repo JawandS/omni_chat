@@ -2,14 +2,14 @@
 Chat module for handling AI provider API calls and responses.
 
 This module provides a unified interface for interacting with multiple AI providers
-including OpenAI, Google Gemini, and Ollama. It handles both synchronous and
-asynchronous streaming responses while maintaining a consistent API.
+including OpenAI, Google Gemini, Anthropic Claude, and Ollama. It handles both
+synchronous and asynchronous streaming responses while maintaining a consistent API.
 
 Key Features:
-    - Multi-provider support (OpenAI, Gemini, Ollama)
+    - Multi-provider support (OpenAI, Gemini, Claude, Ollama)
     - Streaming and non-streaming responses
     - Special handling for reasoning models (o3-mini, etc.)
-    - Web search capabilities for GPT-4.1 Live
+    - Web search capabilities for GPT-4.1 Live and Gemini Live
     - Automatic API key validation
     - Consistent error handling across providers
     - Type-safe response structures
@@ -21,7 +21,7 @@ Architecture:
     - Graceful fallbacks for missing dependencies
 
 Usage:
-    >>> reply = generate_reply("Hello", [], "openai", "gpt-4o")
+    >>> reply = generate_reply("openai", "gpt-4o", "Hello", [])
     >>> if reply.error:
     ...     print(f"Error: {reply.error}")
     >>> else:
@@ -81,6 +81,11 @@ try:
     import requests  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency in tests
     requests = None  # type: ignore
+
+try:
+    from anthropic import Anthropic  # type: ignore
+except ImportError:  # pragma: no cover - optional dependency in tests
+    Anthropic = None  # type: ignore
 
 
 @dataclass
@@ -652,6 +657,95 @@ def _ollama_call(
     return None
 
 
+def _format_history_for_claude(
+    history: List[Dict[str, str]], latest_message: str
+) -> List[Dict[str, str]]:
+    """Convert history list to Claude Messages API format.
+
+    Args:
+        history: List of message dictionaries with 'role' and 'content' keys.
+        latest_message: The new user message to append at the end.
+
+    Returns:
+        Formatted message list for Claude API.
+    """
+    msgs: List[Dict[str, str]] = []
+    for m in history or []:
+        role = m.get("role") or "user"
+        content = m.get("content") or ""
+        # Claude uses 'user' and 'assistant' roles
+        if role not in ("user", "assistant"):
+            role = "user"
+        msgs.append({"role": role, "content": content})
+    # Append current user message
+    msgs.append({"role": "user", "content": latest_message})
+    return msgs
+
+
+def _claude_call(
+    model: str,
+    history: List[Dict[str, str]],
+    message: str,
+    params: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    """Call Anthropic Claude API with formatted history.
+
+    Args:
+        model: The Claude model name.
+        history: Previous message history.
+        message: The current user message.
+        params: Optional parameters for the generation.
+
+    Returns:
+        The reply string or None on failure.
+    """
+    key = get_api_key("claude")
+    if not key or key.startswith("PUT_") or Anthropic is None:
+        return None
+
+    client = Anthropic(api_key=key)
+    messages = _format_history_for_claude(history, message)
+    params = params or {}
+
+    # Whitelist of supported Claude API parameters
+    allowed = {
+        "temperature",
+        "top_p",
+        "top_k",
+        "max_tokens",
+        "stop_sequences",
+    }
+    call_args = {k: params[k] for k in allowed if k in params}
+
+    # Set default max_tokens if not provided (required by Claude API)
+    if "max_tokens" not in call_args:
+        call_args["max_tokens"] = 4096
+
+    try:
+        response = client.messages.create(
+            model=model,
+            messages=cast(Any, messages),
+            **call_args,
+        )
+
+        # Extract text from response
+        if hasattr(response, "content") and response.content:
+            # Claude returns a list of content blocks
+            text_parts = []
+            for block in response.content:
+                if hasattr(block, "text"):
+                    text_parts.append(block.text)
+            return "".join(text_parts) if text_parts else None
+
+        return None
+    except Exception as e:
+        # Log error but return None to let caller handle it
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[CLAUDE] API call failed: {type(e).__name__}: {e}")
+        return None
+
+
 def generate_reply(
     provider: str,
     model: str,
@@ -662,7 +756,7 @@ def generate_reply(
     """Generate a chat response using the specified provider.
 
     Args:
-        provider: AI provider name ('openai', 'gemini', or 'ollama').
+        provider: AI provider name ('openai', 'gemini', 'ollama', or 'claude').
         model: Model name to use.
         message: The user message.
         history: Optional previous message history.
@@ -752,6 +846,22 @@ def generate_reply(
             )
             return ChatReply(
                 reply="", error=f"Ollama error: {e.__class__.__name__}: {e}"
+            )
+
+    elif provider_lower == "claude":
+        try:
+            content = _claude_call(model, history, message, params=params)
+            if content:
+                return ChatReply(reply=content)
+            key = get_api_key("claude")
+            if not key or key.startswith("PUT_") or Anthropic is None:
+                return ChatReply(
+                    reply="", error="Claude API key not set", missing_key_for="claude"
+                )
+            return ChatReply(reply="", error="Claude returned no content")
+        except Exception as e:
+            return ChatReply(
+                reply="", error=f"Claude error: {e.__class__.__name__}: {e}"
             )
     else:
         raise ValueError(f"unknown provider: {provider}")

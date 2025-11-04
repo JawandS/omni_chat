@@ -105,6 +105,73 @@ class ChatReply:
     missing_key_for: Optional[str] = None
 
 
+def _validate_images(images: Optional[List[str]]) -> Optional[str]:
+    """Validate image inputs for multi-modal requests.
+
+    Args:
+        images: List of image URLs or data URIs.
+
+    Returns:
+        Error message if validation fails, None otherwise.
+    """
+    if not images:
+        return None
+
+    if not isinstance(images, list):
+        return "Images parameter must be a list"
+
+    if len(images) > 20:
+        return "Too many images (max 20)"
+
+    for img in images:
+        if not isinstance(img, str):
+            return "Each image must be a string (URL or data URI)"
+        if not (img.startswith("http://") or img.startswith("https://") or img.startswith("data:")):
+            return f"Invalid image format: {img[:50]}... (must be URL or data URI)"
+
+    return None
+
+
+def _validate_params(params: Optional[Dict[str, Any]], provider: str) -> Optional[str]:
+    """Validate parameters for a specific provider.
+
+    Args:
+        params: Parameter dictionary.
+        provider: Provider name.
+
+    Returns:
+        Error message if validation fails, None otherwise.
+    """
+    if not params:
+        return None
+
+    # Validate temperature
+    if "temperature" in params:
+        temp = params["temperature"]
+        if not isinstance(temp, (int, float)) or temp < 0 or temp > 2:
+            return "Temperature must be between 0 and 2"
+
+    # Validate max_tokens
+    if "max_tokens" in params:
+        max_tokens = params["max_tokens"]
+        if not isinstance(max_tokens, int) or max_tokens < 1:
+            return "max_tokens must be a positive integer"
+
+    # Validate thinking_budget_tokens for Claude
+    if provider == "claude" and "thinking_budget_tokens" in params:
+        budget = params["thinking_budget_tokens"]
+        if not isinstance(budget, int) or budget < 1000 or budget > 100000:
+            return "thinking_budget_tokens must be between 1000 and 100000"
+
+    # Validate images
+    if "images" in params:
+        error = _validate_images(params["images"])
+        if error:
+            return error
+
+    return None
+
+
 def _openai_stream(
     model: str,
     history: List[Dict[str, str]],
@@ -117,53 +184,73 @@ def _openai_stream(
         model: The OpenAI model name.
         history: Previous message history.
         message: The current user message.
-        params: Optional parameters.
+        params: Optional parameters including images.
 
     Yields:
         Text chunks from the streaming response.
+
+    Raises:
+        StopIteration: When streaming is complete or on error.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     key = get_api_key("openai")
     if not key or key.startswith("PUT_") or OpenAI is None:
-        yield ""
+        logger.error("[OPENAI-STREAM] API key not configured")
         return
 
-    client = OpenAI(api_key=key)
-    messages = _format_history_for_openai(history, message)
     params = params or {}
-    allowed = {
-        "temperature",
-        "top_p",
-        "max_tokens",
-        "presence_penalty",
-        "frequency_penalty",
-        "seed",
-        "stop",
-        "response_format",
-    }
-    call_args = {k: params[k] for k in allowed if k in params}
+    images = params.get("images")
 
     # Reasoning and thinking models don't support streaming
     if _is_reasoning_model(model) or _is_thinking_model(model) or _is_live_model(model):
-        # Fall back to non-streaming
+        logger.info(f"[OPENAI-STREAM] Model {model} doesn't support streaming, falling back to non-streaming")
         content = _openai_call(model, history, message, params)
         if content:
             yield content
         return
 
     try:
+        client = OpenAI(api_key=key)
+        messages = _format_history_for_openai(history, message, images)
+
+        allowed = {
+            "temperature",
+            "top_p",
+            "max_tokens",
+            "presence_penalty",
+            "frequency_penalty",
+            "seed",
+            "stop",
+        }
+        call_args = {k: params[k] for k in allowed if k in params}
+
+        # Handle JSON mode
+        if params.get("json_mode", False):
+            call_args["response_format"] = {"type": "json_object"}
+        elif "response_format" in params:
+            call_args["response_format"] = params["response_format"]
+
+        logger.info(f"[OPENAI-STREAM] Starting stream for model {model}")
         stream = client.chat.completions.create(
             model=model,
             messages=cast(Any, messages),
             stream=True,
             **call_args,
         )
+
         for chunk in stream:
             if hasattr(chunk, "choices") and chunk.choices:
                 delta = chunk.choices[0].delta
                 if hasattr(delta, "content") and delta.content:
                     yield delta.content
-    except Exception:
-        yield ""
+
+        logger.info(f"[OPENAI-STREAM] Stream completed for model {model}")
+
+    except Exception as e:
+        logger.error(f"[OPENAI-STREAM] Error: {type(e).__name__}: {e}")
+        return
 
 
 def _gemini_stream(
@@ -178,30 +265,37 @@ def _gemini_stream(
         model: The Gemini model name.
         history: Previous message history.
         message: The current user message.
-        params: Optional parameters.
+        params: Optional parameters including images.
 
     Yields:
         Text chunks from the streaming response.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     key = get_api_key("gemini")
     if not key or key.startswith("PUT_") or genai is None:
-        yield ""
+        logger.error("[GEMINI-STREAM] API key not configured")
         return
+
+    params = params or {}
+    images = params.get("images")
 
     # Live models don't support streaming yet
     if model.lower().endswith("-live"):
+        logger.info(f"[GEMINI-STREAM] Model {model} doesn't support streaming, falling back to non-streaming")
         content = _gemini_live_call(model, history, message, params)
         if content:
             yield content
         return
 
-    genai.configure(api_key=key)
-    chat_history, user_text = _format_history_for_gemini(history, message)
-    params = params or {}
-    allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
-    generation_config = {k: params[k] for k in allowed if k in params}
-
     try:
+        genai.configure(api_key=key)
+        chat_history, user_text = _format_history_for_gemini(history, message, images)
+        allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
+        generation_config = {k: params[k] for k in allowed if k in params}
+
+        logger.info(f"[GEMINI-STREAM] Starting stream for model {model}")
         model_obj = genai.GenerativeModel(
             model, generation_config=generation_config or None
         )
@@ -211,8 +305,12 @@ def _gemini_stream(
         for chunk in response:
             if hasattr(chunk, "text") and chunk.text:
                 yield chunk.text
-    except Exception:
-        yield ""
+
+        logger.info(f"[GEMINI-STREAM] Stream completed for model {model}")
+
+    except Exception as e:
+        logger.error(f"[GEMINI-STREAM] Error: {type(e).__name__}: {e}")
+        return
 
 
 def _claude_stream(
@@ -227,33 +325,47 @@ def _claude_stream(
         model: The Claude model name.
         history: Previous message history.
         message: The current user message.
-        params: Optional parameters.
+        params: Optional parameters including images.
 
     Yields:
         Text chunks from the streaming response.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     key = get_api_key("claude")
     if not key or key.startswith("PUT_") or Anthropic is None:
-        yield ""
+        logger.error("[CLAUDE-STREAM] API key not configured")
         return
 
-    client = Anthropic(api_key=key)
-    messages = _format_history_for_claude(history, message)
     params = params or {}
-
-    allowed = {
-        "temperature",
-        "top_p",
-        "top_k",
-        "max_tokens",
-        "stop_sequences",
-    }
-    call_args = {k: params[k] for k in allowed if k in params}
-
-    if "max_tokens" not in call_args:
-        call_args["max_tokens"] = 4096
+    images = params.get("images")
 
     try:
+        client = Anthropic(api_key=key)
+        messages = _format_history_for_claude(history, message, images)
+
+        allowed = {
+            "temperature",
+            "top_p",
+            "top_k",
+            "max_tokens",
+            "stop_sequences",
+        }
+        call_args = {k: params[k] for k in allowed if k in params}
+
+        if "max_tokens" not in call_args:
+            call_args["max_tokens"] = 4096
+
+        # Note: Extended thinking and caching don't work with streaming
+        if params.get("extended_thinking") or params.get("enable_caching"):
+            logger.warning("[CLAUDE-STREAM] Extended thinking/caching not supported in streaming, falling back")
+            content = _claude_call(model, history, message, params)
+            if content:
+                yield content
+            return
+
+        logger.info(f"[CLAUDE-STREAM] Starting stream for model {model}")
         with client.messages.stream(
             model=model,
             messages=cast(Any, messages),
@@ -261,8 +373,12 @@ def _claude_stream(
         ) as stream:
             for text in stream.text_stream:
                 yield text
-    except Exception:
-        yield ""
+
+        logger.info(f"[CLAUDE-STREAM] Stream completed for model {model}")
+
+    except Exception as e:
+        logger.error(f"[CLAUDE-STREAM] Error: {type(e).__name__}: {e}")
+        return
 
 
 def generate_reply_stream(
@@ -279,7 +395,7 @@ def generate_reply_stream(
         model: Model name to use.
         message: The user message.
         history: Optional previous message history.
-        params: Optional parameters.
+        params: Optional parameters (temperature, images, etc.).
 
     Yields:
         Text chunks from the streaming response.
@@ -287,14 +403,26 @@ def generate_reply_stream(
     Raises:
         ValueError: If provider is invalid or required parameters are missing.
     """
+    import logging
+    logger = logging.getLogger(__name__)
+
     if not provider or not provider.strip():
         raise ValueError("provider is required")
 
     if not model or not model.strip():
         raise ValueError("model is required")
 
+    if not message or not message.strip():
+        raise ValueError("message is required and cannot be empty")
+
     provider_lower = provider.lower().strip()
     history = history or []
+
+    # Validate parameters
+    validation_error = _validate_params(params, provider_lower)
+    if validation_error:
+        logger.error(f"[STREAM] Parameter validation failed: {validation_error}")
+        raise ValueError(f"Parameter validation failed: {validation_error}")
 
     if provider_lower == "openai":
         yield from _openai_stream(model, history, message, params)
@@ -447,7 +575,7 @@ def _openai_call(
     params = params or {}
     images = params.get("images")
     messages = _format_history_for_openai(history, message, images)
-    params = params or {}
+
     # Whitelist of supported OpenAI Chat Completions parameters
     allowed = {
         "temperature",
@@ -462,18 +590,18 @@ def _openai_call(
         "thinking_budget_tokens",
     }
 
+    # Filter out thinking_budget_tokens for models that don't support it
+    if not _supports_thinking_budget_tokens(model):
+        allowed = allowed - {"thinking_budget_tokens"}
+
+    # Build call arguments
+    call_args = {k: params[k] for k in allowed if k in params}
+
     # Handle JSON mode if requested
     if params.get("json_mode", False):
         call_args["response_format"] = {"type": "json_object"}
     elif "response_format" in params:
         call_args["response_format"] = params["response_format"]
-    
-    # Filter out thinking_budget_tokens for models that don't support it
-    # thinking_budget_tokens is only supported by certain newer models
-    if not _supports_thinking_budget_tokens(model):
-        allowed = allowed - {"thinking_budget_tokens"}
-    
-    call_args = {k: params[k] for k in allowed if k in params}
 
     if _is_reasoning_model(model):
         # Use Responses API for reasoning models like o3-mini.
@@ -603,7 +731,6 @@ def _gemini_call(
     params = params or {}
     images = params.get("images")
     chat_history, user_text = _format_history_for_gemini(history, message, images)
-    params = params or {}
     allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
     generation_config = {k: params[k] for k in allowed if k in params}
     # web_search boolean could be toggled via safety_settings or tools in real API; placeholder ignore
@@ -1062,10 +1189,11 @@ def generate_reply(
     """Generate a chat response using the specified provider.
 
     Args:
-        provider: AI provider name ('openai', 'gemini', 'ollama', or 'claude').
+        provider: AI provider name ('openai', 'gemini', 'claude', or 'ollama').
         model: Model name to use.
         message: The user message.
         history: Optional previous message history.
+        params: Optional parameters (temperature, images, extended_thinking, etc.).
 
     Returns:
         ChatReply object with the response or error information.
@@ -1079,8 +1207,16 @@ def generate_reply(
     if not model or not model.strip():
         raise ValueError("model is required")
 
+    if not message or not message.strip():
+        raise ValueError("message is required and cannot be empty")
+
     provider_lower = provider.lower().strip()
     history = history or []
+
+    # Validate parameters
+    validation_error = _validate_params(params, provider_lower)
+    if validation_error:
+        return ChatReply(reply="", error=f"Parameter validation failed: {validation_error}")
 
     if provider_lower == "openai":
         try:

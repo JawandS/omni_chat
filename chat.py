@@ -105,6 +105,213 @@ class ChatReply:
     missing_key_for: Optional[str] = None
 
 
+def _openai_stream(
+    model: str,
+    history: List[Dict[str, str]],
+    message: str,
+    params: Optional[Dict[str, Any]] = None,
+):
+    """Stream responses from OpenAI API.
+
+    Args:
+        model: The OpenAI model name.
+        history: Previous message history.
+        message: The current user message.
+        params: Optional parameters.
+
+    Yields:
+        Text chunks from the streaming response.
+    """
+    key = get_api_key("openai")
+    if not key or key.startswith("PUT_") or OpenAI is None:
+        yield ""
+        return
+
+    client = OpenAI(api_key=key)
+    messages = _format_history_for_openai(history, message)
+    params = params or {}
+    allowed = {
+        "temperature",
+        "top_p",
+        "max_tokens",
+        "presence_penalty",
+        "frequency_penalty",
+        "seed",
+        "stop",
+        "response_format",
+    }
+    call_args = {k: params[k] for k in allowed if k in params}
+
+    # Reasoning and thinking models don't support streaming
+    if _is_reasoning_model(model) or _is_thinking_model(model) or _is_live_model(model):
+        # Fall back to non-streaming
+        content = _openai_call(model, history, message, params)
+        if content:
+            yield content
+        return
+
+    try:
+        stream = client.chat.completions.create(
+            model=model,
+            messages=cast(Any, messages),
+            stream=True,
+            **call_args,
+        )
+        for chunk in stream:
+            if hasattr(chunk, "choices") and chunk.choices:
+                delta = chunk.choices[0].delta
+                if hasattr(delta, "content") and delta.content:
+                    yield delta.content
+    except Exception:
+        yield ""
+
+
+def _gemini_stream(
+    model: str,
+    history: List[Dict[str, str]],
+    message: str,
+    params: Optional[Dict[str, Any]] = None,
+):
+    """Stream responses from Gemini API.
+
+    Args:
+        model: The Gemini model name.
+        history: Previous message history.
+        message: The current user message.
+        params: Optional parameters.
+
+    Yields:
+        Text chunks from the streaming response.
+    """
+    key = get_api_key("gemini")
+    if not key or key.startswith("PUT_") or genai is None:
+        yield ""
+        return
+
+    # Live models don't support streaming yet
+    if model.lower().endswith("-live"):
+        content = _gemini_live_call(model, history, message, params)
+        if content:
+            yield content
+        return
+
+    genai.configure(api_key=key)
+    chat_history, user_text = _format_history_for_gemini(history, message)
+    params = params or {}
+    allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
+    generation_config = {k: params[k] for k in allowed if k in params}
+
+    try:
+        model_obj = genai.GenerativeModel(
+            model, generation_config=generation_config or None
+        )
+        chat = model_obj.start_chat(history=cast(Any, chat_history))
+        response = chat.send_message(user_text, stream=True)
+
+        for chunk in response:
+            if hasattr(chunk, "text") and chunk.text:
+                yield chunk.text
+    except Exception:
+        yield ""
+
+
+def _claude_stream(
+    model: str,
+    history: List[Dict[str, str]],
+    message: str,
+    params: Optional[Dict[str, Any]] = None,
+):
+    """Stream responses from Claude API.
+
+    Args:
+        model: The Claude model name.
+        history: Previous message history.
+        message: The current user message.
+        params: Optional parameters.
+
+    Yields:
+        Text chunks from the streaming response.
+    """
+    key = get_api_key("claude")
+    if not key or key.startswith("PUT_") or Anthropic is None:
+        yield ""
+        return
+
+    client = Anthropic(api_key=key)
+    messages = _format_history_for_claude(history, message)
+    params = params or {}
+
+    allowed = {
+        "temperature",
+        "top_p",
+        "top_k",
+        "max_tokens",
+        "stop_sequences",
+    }
+    call_args = {k: params[k] for k in allowed if k in params}
+
+    if "max_tokens" not in call_args:
+        call_args["max_tokens"] = 4096
+
+    try:
+        with client.messages.stream(
+            model=model,
+            messages=cast(Any, messages),
+            **call_args,
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+    except Exception:
+        yield ""
+
+
+def generate_reply_stream(
+    provider: str,
+    model: str,
+    message: str,
+    history: Optional[List[Dict[str, str]]] = None,
+    params: Optional[Dict[str, Any]] = None,
+):
+    """Generate a streaming chat response using the specified provider.
+
+    Args:
+        provider: AI provider name ('openai', 'gemini', 'claude', or 'ollama').
+        model: Model name to use.
+        message: The user message.
+        history: Optional previous message history.
+        params: Optional parameters.
+
+    Yields:
+        Text chunks from the streaming response.
+
+    Raises:
+        ValueError: If provider is invalid or required parameters are missing.
+    """
+    if not provider or not provider.strip():
+        raise ValueError("provider is required")
+
+    if not model or not model.strip():
+        raise ValueError("model is required")
+
+    provider_lower = provider.lower().strip()
+    history = history or []
+
+    if provider_lower == "openai":
+        yield from _openai_stream(model, history, message, params)
+    elif provider_lower == "gemini":
+        yield from _gemini_stream(model, history, message, params)
+    elif provider_lower == "claude":
+        yield from _claude_stream(model, history, message, params)
+    elif provider_lower == "ollama":
+        # Ollama doesn't support streaming in current implementation
+        # Fall back to non-streaming
+        content = _ollama_call(model, history, message, params)
+        if content:
+            yield content
+    else:
+        raise ValueError(f"unknown provider: {provider}")
+
+
 def _format_history_for_openai(
     history: List[Dict[str, str]], latest_message: str
 ) -> List[Dict[str, str]]:
@@ -721,6 +928,27 @@ def _claude_call(
     if "max_tokens" not in call_args:
         call_args["max_tokens"] = 4096
 
+    # Add extended thinking support for Claude
+    # Extended thinking allows the model to "think" longer before responding
+    if params.get("extended_thinking", False):
+        # Enable extended thinking mode
+        call_args["thinking"] = {
+            "type": "enabled",
+            "budget_tokens": params.get("thinking_budget_tokens", 10000)
+        }
+
+    # Add prompt caching support for Claude
+    # Prompt caching can significantly reduce costs for conversations with large context
+    # Enable caching if requested and history is long enough to benefit
+    if params.get("enable_caching", False) and len(messages) > 2:
+        # Mark recent messages for caching
+        # The last few messages in history can be cached to reduce repeated processing
+        for i, msg in enumerate(messages[:-1]):  # Don't cache the latest message
+            if i >= len(messages) - 3:  # Cache last 2-3 messages
+                # Add cache control to eligible messages
+                if isinstance(msg.get("content"), str):
+                    msg["cache_control"] = {"type": "ephemeral"}
+
     try:
         response = client.messages.create(
             model=model,
@@ -735,6 +963,10 @@ def _claude_call(
             for block in response.content:
                 if hasattr(block, "text"):
                     text_parts.append(block.text)
+                # Include thinking content if available
+                elif hasattr(block, "type") and block.type == "thinking":
+                    if hasattr(block, "thinking"):
+                        text_parts.append(f"\n[Thinking: {block.thinking}]\n")
             return "".join(text_parts) if text_parts else None
 
         return None

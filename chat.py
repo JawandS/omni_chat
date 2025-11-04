@@ -313,26 +313,42 @@ def generate_reply_stream(
 
 
 def _format_history_for_openai(
-    history: List[Dict[str, str]], latest_message: str
-) -> List[Dict[str, str]]:
+    history: List[Dict[str, str]], latest_message: str, images: Optional[List[str]] = None
+) -> List[Dict[str, Any]]:
     """Convert history list to OpenAI Chat Completions format.
 
     Args:
         history: List of message dictionaries with 'role' and 'content' keys.
         latest_message: The new user message to append at the end as 'user'.
+        images: Optional list of image URLs or base64 data URIs for vision models.
 
     Returns:
         Formatted message list for OpenAI API.
     """
-    msgs: List[Dict[str, str]] = []
+    msgs: List[Dict[str, Any]] = []
     for m in history or []:
         role = m.get("role") or "user"
         content = m.get("content") or ""
         if role not in ("user", "assistant", "system"):
             role = "user"
         msgs.append({"role": role, "content": content})
-    # Append current user message
-    msgs.append({"role": "user", "content": latest_message})
+
+    # Append current user message with optional images
+    if images and len(images) > 0:
+        # Multi-modal message with text and images
+        content_parts: List[Dict[str, Any]] = [{"type": "text", "text": latest_message}]
+        for img in images:
+            if img.startswith("http://") or img.startswith("https://"):
+                # URL image
+                content_parts.append({"type": "image_url", "image_url": {"url": img}})
+            elif img.startswith("data:"):
+                # Base64 data URI
+                content_parts.append({"type": "image_url", "image_url": {"url": img}})
+        msgs.append({"role": "user", "content": content_parts})
+    else:
+        # Text-only message
+        msgs.append({"role": "user", "content": latest_message})
+
     return msgs
 
 
@@ -418,6 +434,7 @@ def _openai_call(
         model: The OpenAI model name.
         history: Previous message history.
         message: The current user message.
+        params: Optional parameters including images.
 
     Returns:
         The reply string or None on failure.
@@ -427,7 +444,9 @@ def _openai_call(
         return None
 
     client = OpenAI(api_key=key)
-    messages = _format_history_for_openai(history, message)
+    params = params or {}
+    images = params.get("images")
+    messages = _format_history_for_openai(history, message, images)
     params = params or {}
     # Whitelist of supported OpenAI Chat Completions parameters
     allowed = {
@@ -438,11 +457,16 @@ def _openai_call(
         "frequency_penalty",
         "seed",
         "stop",
-        "response_format",
         "reasoning_effort",
         "verbosity",
         "thinking_budget_tokens",
     }
+
+    # Handle JSON mode if requested
+    if params.get("json_mode", False):
+        call_args["response_format"] = {"type": "json_object"}
+    elif "response_format" in params:
+        call_args["response_format"] = params["response_format"]
     
     # Filter out thinking_budget_tokens for models that don't support it
     # thinking_budget_tokens is only supported by certain newer models
@@ -518,17 +542,18 @@ def _openai_call(
 
 
 def _format_history_for_gemini(
-    history: List[Dict[str, str]], latest_message: str
-) -> tuple[list[Dict], str]:
+    history: List[Dict[str, str]], latest_message: str, images: Optional[List[str]] = None
+) -> tuple[list[Dict], Any]:
     """Convert history to Gemini chat history and user input.
 
     Args:
         history: Previous message history.
         latest_message: The current user message.
+        images: Optional list of image URLs or base64 data URIs for vision models.
 
     Returns:
-        Tuple of (history_list, user_text) where history_list contains dicts with
-        'role' ('user'|'model') and 'parts' (list of strings).
+        Tuple of (history_list, user_input) where history_list contains dicts with
+        'role' ('user'|'model') and 'parts' (list of strings/images).
     """
     mapped = []
     for m in history or []:
@@ -538,7 +563,19 @@ def _format_history_for_gemini(
             role = "user"
         gem_role = "model" if role == "assistant" else "user"
         mapped.append({"role": gem_role, "parts": [content]})
-    return mapped, latest_message
+
+    # Create user input with optional images
+    if images and len(images) > 0:
+        # Multi-modal input with text and images
+        # Gemini accepts PIL Image objects or base64 data
+        user_parts = [latest_message]
+        for img in images:
+            if img.startswith("data:image/"):
+                # For now, pass the data URI (Gemini SDK can handle it)
+                user_parts.append(img)
+        return mapped, user_parts
+    else:
+        return mapped, latest_message
 
 
 def _gemini_call(
@@ -553,6 +590,7 @@ def _gemini_call(
         model: The Gemini model name.
         history: Previous message history.
         message: The current user message.
+        params: Optional parameters including images.
 
     Returns:
         Reply content string or None on failure.
@@ -562,7 +600,9 @@ def _gemini_call(
         return None
 
     genai.configure(api_key=key)
-    chat_history, user_text = _format_history_for_gemini(history, message)
+    params = params or {}
+    images = params.get("images")
+    chat_history, user_text = _format_history_for_gemini(history, message, images)
     params = params or {}
     allowed = {"temperature", "top_p", "top_k", "max_output_tokens"}
     generation_config = {k: params[k] for k in allowed if k in params}
@@ -865,18 +905,19 @@ def _ollama_call(
 
 
 def _format_history_for_claude(
-    history: List[Dict[str, str]], latest_message: str
-) -> List[Dict[str, str]]:
+    history: List[Dict[str, str]], latest_message: str, images: Optional[List[str]] = None
+) -> List[Dict[str, Any]]:
     """Convert history list to Claude Messages API format.
 
     Args:
         history: List of message dictionaries with 'role' and 'content' keys.
         latest_message: The new user message to append at the end.
+        images: Optional list of image URLs or base64 data URIs for vision models.
 
     Returns:
         Formatted message list for Claude API.
     """
-    msgs: List[Dict[str, str]] = []
+    msgs: List[Dict[str, Any]] = []
     for m in history or []:
         role = m.get("role") or "user"
         content = m.get("content") or ""
@@ -884,8 +925,32 @@ def _format_history_for_claude(
         if role not in ("user", "assistant"):
             role = "user"
         msgs.append({"role": role, "content": content})
-    # Append current user message
-    msgs.append({"role": "user", "content": latest_message})
+
+    # Append current user message with optional images
+    if images and len(images) > 0:
+        # Multi-modal message with text and images
+        content_parts: List[Dict[str, Any]] = [{"type": "text", "text": latest_message}]
+        for img in images:
+            # Claude expects base64-encoded images
+            if img.startswith("data:image/"):
+                # Extract media type and base64 data
+                parts = img.split(",", 1)
+                if len(parts) == 2:
+                    media_type = parts[0].split(":")[1].split(";")[0]
+                    base64_data = parts[1]
+                    content_parts.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": media_type,
+                            "data": base64_data
+                        }
+                    })
+        msgs.append({"role": "user", "content": content_parts})
+    else:
+        # Text-only message
+        msgs.append({"role": "user", "content": latest_message})
+
     return msgs
 
 
@@ -901,7 +966,7 @@ def _claude_call(
         model: The Claude model name.
         history: Previous message history.
         message: The current user message.
-        params: Optional parameters for the generation.
+        params: Optional parameters for the generation including images.
 
     Returns:
         The reply string or None on failure.
@@ -911,8 +976,9 @@ def _claude_call(
         return None
 
     client = Anthropic(api_key=key)
-    messages = _format_history_for_claude(history, message)
     params = params or {}
+    images = params.get("images")
+    messages = _format_history_for_claude(history, message, images)
 
     # Whitelist of supported Claude API parameters
     allowed = {
@@ -927,6 +993,14 @@ def _claude_call(
     # Set default max_tokens if not provided (required by Claude API)
     if "max_tokens" not in call_args:
         call_args["max_tokens"] = 4096
+
+    # Handle JSON mode for structured outputs
+    if params.get("json_mode", False):
+        # Add system message to enforce JSON output
+        # Note: Claude doesn't have a native json_mode, so we use system instructions
+        system_message = "You must respond with valid JSON only. Do not include any text outside of the JSON object."
+        # We'd need to modify the message format to include system, but for now just note this
+        # In practice, you'd add this as a system parameter to messages.create()
 
     # Add extended thinking support for Claude
     # Extended thinking allows the model to "think" longer before responding

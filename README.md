@@ -1,19 +1,29 @@
 # Omni Chat
 
-A lightweight, locally-hosted web chat interface that provides a unified way to interact with multiple AI providers. Switch between OpenAI, Google Gemini, and Ollama models mid-conversation while maintaining your chat history in a local SQLite database.
+A lightweight, locally-hosted web chat interface that provides a unified way to interact with multiple AI providers. Switch between OpenAI, Google Gemini, Anthropic Claude, and Ollama models mid-conversation while maintaining your chat history in a local SQLite database.
 
 ## ✨ Features
 
-- **Multi-Provider Support**: OpenAI (GPT-4o, GPT-5, o3-mini), Google Gemini, and Ollama
+### Core Capabilities
+- **Multi-Provider Support**: OpenAI, Google Gemini, Anthropic Claude, and Ollama (local models)
+- **Latest Models**: Claude Sonnet 4.5, GPT-4o, Gemini 2.5 Pro/Flash, and more
 - **Model Switching**: Change AI providers and models within the same conversation
 - **Local Storage**: All chats stored locally in SQLite - your data stays private
 - **Project Organization**: Group related chats into projects for better organization
+
+### Advanced AI Features
+- **Real-time Streaming**: Live response streaming for all providers
+- **Vision/Image Support**: Multi-modal conversations with image inputs
+- **Extended Thinking**: Deep reasoning mode for Claude models
+- **Prompt Caching**: Reduce costs with intelligent context caching (Claude)
+- **JSON Mode**: Structured outputs for data extraction and APIs
+- **Web Search**: Real-time web search with GPT-4.1 Live and Gemini Live
+
+### Automation & Integration
 - **Task Scheduling**: Schedule recurring AI tasks with email notifications
 - **Email Integration**: Send task results via email with SMTP support
-- **Responsive UI**: Clean, modern interface that works on desktop and mobile
-- **Real-time Streaming**: Live response streaming for supported models
-- **Web Search**: GPT-4.1 Live with real-time web search capabilities
 - **Favorites System**: Quick access to your preferred model configurations
+- **Responsive UI**: Clean, modern interface that works on desktop and mobile
 
 ## 🚀 Quick Start
 
@@ -57,6 +67,7 @@ Click the settings icon (⚙️) and add your API keys, or create a `.env` file:
 ```bash
 OPENAI_API_KEY=sk-your-openai-key-here
 GEMINI_API_KEY=your-gemini-api-key-here
+CLAUDE_API_KEY=sk-ant-your-claude-key-here
 ```
 
 That's it! You can now start chatting with AI models.
@@ -75,7 +86,13 @@ Create a `.env` file in the project root:
 ```env
 OPENAI_API_KEY=sk-your-openai-key-here
 GEMINI_API_KEY=your-gemini-api-key-here
+CLAUDE_API_KEY=sk-ant-your-claude-key-here
 ```
+
+**Getting API Keys**:
+- **OpenAI**: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+- **Google Gemini**: [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+- **Anthropic Claude**: [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys)
 
 ### Email Setup (Optional)
 
@@ -188,19 +205,82 @@ Ollama allows you to run AI models locally on your machine, providing privacy an
 
 ### Supported Providers
 
+**Anthropic Claude** (NEW):
+- **Claude Sonnet 4.5**: Most intelligent model for complex tasks
+- **Claude Haiku 4.5**: Fastest model with near-frontier intelligence
+- **Claude Opus 4.1**: Exceptional for specialized reasoning
+- Features: Extended thinking, prompt caching, vision support
+
 **OpenAI**:
-- GPT-4o, GPT-5, GPT-5-mini, GPT-5-nano
-- GPT-4.1 (with web search), GPT-4.1-mini, GPT-4.1-nano
-- o3, o3-pro, o3-mini (reasoning models)
-- Legacy models: GPT-4, GPT-3.5-turbo
+- **GPT-4o**: Most capable model, multimodal
+- **GPT-4o-mini**: Fast and affordable
+- **o1, o1-mini**: Advanced reasoning models
+- **o3-mini**: Latest reasoning model
+- Legacy: GPT-4-turbo, GPT-3.5-turbo
 
 **Google Gemini**:
-- Gemini-2.5-flash, Gemini-2.0-flash
-- Gemini-1.5-pro, Gemini-1.5-flash
+- **Gemini 2.5 Pro**: State-of-the-art reasoning and coding
+- **Gemini 2.5 Flash**: Best price-performance ratio
+- **Gemini 2.5 Flash-Lite**: Fastest with high throughput
+- **Gemini 2.0 Flash**: Second generation workhorse
+- **Gemini 2.5 Pro Live**: Real-time web search grounding
 
 **Ollama** (Local models):
 - Any model available in your local Ollama installation
 - Automatic detection and configuration
+- No API key required - runs entirely offline
+
+## 🚀 Advanced Features
+
+### Streaming Responses
+Get real-time responses as the AI generates them for a more interactive experience. Supported by all providers (OpenAI, Claude, Gemini).
+
+### Vision & Image Support
+Send images along with your text prompts for multi-modal conversations:
+- **Supported formats**: URLs, base64 data URIs
+- **Use cases**: Image analysis, OCR, visual Q&A, diagram explanations
+- **Providers**: All providers support vision-capable models
+
+### Extended Thinking (Claude)
+Enable deeper reasoning for complex problems:
+```json
+{
+  "extended_thinking": true,
+  "thinking_budget_tokens": 10000
+}
+```
+- Allows Claude to "think" longer before responding
+- Better for math, logic, coding, and complex analysis
+- Configurable thinking budget (default: 10000 tokens)
+
+### Prompt Caching (Claude)
+Reduce API costs for conversations with large context:
+```json
+{
+  "enable_caching": true
+}
+```
+- Automatically caches recent message history
+- Significantly reduces costs for long conversations
+- Transparent - no changes to your workflow needed
+
+### JSON Mode
+Get structured, predictable responses for data extraction:
+```json
+{
+  "json_mode": true
+}
+```
+- Forces AI to respond with valid JSON only
+- Perfect for API integrations and data processing
+- Supported by OpenAI and Claude
+
+### Web Search Integration
+Access real-time information with search-enabled models:
+- **GPT-4.1 Live**: OpenAI's web search integration
+- **Gemini 2.5 Pro Live**: Google's search grounding
+- Automatically searches and cites sources
+- Perfect for current events, latest data, and research
 
 ## 🛠️ Development
 
